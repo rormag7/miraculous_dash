@@ -622,6 +622,8 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 def compute_average_metrics(compute_avg_clicks):
     return fig
 
+z
+
 #####################
 ## TAB 3 CALLBACKS ##
 #####################
