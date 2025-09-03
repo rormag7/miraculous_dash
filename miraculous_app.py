@@ -10,6 +10,7 @@ from matplotlib.animation import FuncAnimation
 from IPython.display import Video
 import csv
 import copy
+import pandas as pd
 from ultralytics import YOLO
 step_identification_model_l = YOLO(r'C:\Users\rorym\Downloads\FALL 2025\Applied Project\Code\Model_Weights\Step_Identification\yolov8l_best.pt')  # Loading best trained model
 
@@ -72,7 +73,8 @@ app = dash.Dash(__name__)
 trial_file = "S145_W1.npz" #S145_W1.npz"
 trial_name, ext = os.path.splitext(trial_file)
 data = np.load(trial_file)
-trial_frames = data['arr_0']
+trial_frames = data['arr_0'][0:2000] # WILL NEED TO REMOVE [0:2000] LATER BUT WILL HELP TO SPEED UP DEVELOPMENT
+
 trial_frames = np.rot90(trial_frames, k=1, axes=(1, 2))
 num_frames = trial_frames.shape[0]
 zmax_val = float(np.max(trial_frames))
@@ -512,7 +514,7 @@ def get_CPEI(analyze_clicks, selected_step, bbox_table_data, pass_table_data, se
         template="plotly_white"
     )
     
-    return fig
+    return fig,
 
 # Helper functions
 def make_new_box(x0=7, x1=77, y0=7, y1=77, class_id=0):
@@ -599,7 +601,7 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 
     active_frames = np.where(total_pressure_per_pass_frame > threshold_kPa)
     # Could probably add something in here to be sure the frame gaps aren't too large in case there is random noise before or later in the pass
-    print(f"Active Frames: {active_frames}")
+    #print(f"Active Frames: {active_frames}")
     
     # Setting the number of frames to pad the threshold with in case the first or last active frames are lower than the threshold value
     frame_padding = 3
@@ -612,21 +614,68 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
     total_pressure_per_step_frame = total_pressure_per_pass_frame[start_frame_pred:end_frame_pred]
     
     return pred_step_frames, total_pressure_per_step_frame
-    
-# Callback to get average step metrics
-@app.callback(
-    Output("CPEI-output", "figure"),
-    Input("compute-average-metrics", "n_clicks"),
-    prevent_initial_call=True
-)
-def compute_average_metrics(compute_avg_clicks):
-    return fig
+ 
+   
 
-z
 
 #####################
 ## TAB 3 CALLBACKS ##
 #####################
+
+
+# Callback to get average step metrics
+@app.callback(
+    #Output("avg-left-output", "figure"),
+    #Output("avg-right-output", "figure"),
+    Input("compute-average-metrics", "n_clicks"),
+    State("bbox-info-dict", "data"),
+    State("shared-pass-table","data"),
+    prevent_initial_call=True
+)
+def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
+    print()
+    print(f"SHARED PASS DATA: {shared_pass_data}")
+    print()
+    
+  
+    for pass_id, box_info in bbox_info.items():
+        for box in box_info:
+            box['start_frame'] = 'meow'
+            box['end_frame'] = 'meow'
+            box['CoP_x'] = 'meow' #need to actually do this
+            box['CoP_y'] = 'meow'
+                
+    print(bbox_info)
+    
+    # rotate heatmap and cop by PC1
+    
+    # identify pass direction and rotate appropriately
+    
+    # split into left and rightz
+    
+    # get average step
+
+    
+
+        # Splitting step info into left and right steps
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -735,7 +784,8 @@ tab2 = html.Div([
 
 tab3 = html.Div([
     html.H4("Heatmap and Mask Overlay"),
-    html.P("Heatmap with mask and controls would go here...")
+    html.P("Heatmap with mask and controls would go here..."),
+    html.Div([dcc.Graph(id="avg-left-output"), dcc.Graph(id="avg-right-output")])
 ])
 
 
