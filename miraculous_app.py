@@ -11,6 +11,7 @@ from IPython.display import Video
 import csv
 import copy
 import pandas as pd
+import math
 from ultralytics import YOLO
 step_identification_model_l = YOLO(r'C:\Users\rorym\Downloads\FALL 2025\Applied Project\Code\Model_Weights\Step_Identification\yolov8l_best.pt')  # Loading best trained model
 
@@ -53,7 +54,6 @@ fig.update_layout(
     legend_title="Legend",
     template="plotly_white"
 )
-
 
 
 
@@ -637,30 +637,84 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
     print(f"SHARED PASS DATA: {shared_pass_data}")
     print()
     
-  
+  # get step frames and CoP
     for pass_id, box_info in bbox_info.items():
+        # Getting the pass frames
+        pass_start_frame = next(pass_info['start_frame'] for pass_info in shared_pass_data if pass_info['pass_idx'] == int(pass_id))
+        pass_end_frame = next(pass_info['end_frame'] for pass_info in shared_pass_data if pass_info['pass_idx'] == int(pass_id))
+        pass_data = trial_frames[pass_start_frame:pass_end_frame]
+        print(pass_start_frame)
+        
+        # Predicting start and end frames for the step and getting the CoP trace
         for box in box_info:
-            box['start_frame'] = 'meow'
-            box['end_frame'] = 'meow'
-            box['CoP_x'] = 'meow' #need to actually do this
-            box['CoP_y'] = 'meow'
-                
-    print(bbox_info)
+            step_data, box['CoP_x'], box['CoP_y'], box['start_frame'], box['end_frame'] = get_step_frames_and_CoP(box, pass_data, 5000)
+            
+         
+            plt.imshow(step_data[:].max(0), cmap = jet_cmap)     
+            plt.plot(box['CoP_x'], box['CoP_y'])
+            plt.show()
     
-    # rotate heatmap and cop by PC1
-    
-    # identify pass direction and rotate appropriately
-    
-    # split into left and rightz
+    # rotate heatmap and cop by PC1 and crop by identifying pass direction, toes should be upward
+    # there is no need to rotate everything twice, so I need to rewrite those functions
+        
+    # split into left and right
     
     # get average step
 
+# Function to get predicted step frames and CoP trace. The outputs step_data, CoP_x, and CoP_y will only output frames/values within the predicted start and end frames. We will still output true start and end frames for debugging purposes
+def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
+
+    # Getting the coords of the bounding box corners, rounding to the nearest pixel
+    y_min = math.floor(step_info['y0'])
+    y_max = math.ceil(step_info['y1'])
+    x_min = math.floor(step_info['x0'])
+    x_max = math.ceil(step_info['x1'])
     
+    # All frames from the pass within the step region
+    step_data = pass_data[:, y_min:y_max, x_min:x_max]
+    step_data = np.rot90(step_data, axes=(1,2))
+    # Sum pressures in each frame
+    total_pressure_per_frame = step_data.sum(axis=(1, 2))
+    
+  
+    
+    active_frames = np.where(total_pressure_per_frame > threshold_kPa)
 
-        # Splitting step info into left and right steps
+    # Setting the number of frames to pad the threshold with in case the first or last active frames are lower than the threshold value
+    frame_padding = 5
+
+    start_frame_pred = np.min(active_frames) - frame_padding if np.min(active_frames) - frame_padding >= 0 else 0 # Conditionals in case the padding extends beyond the bounds of the pass
+    end_frame_pred = np.max(active_frames) + frame_padding if np.max(active_frames) - frame_padding <= step_data.shape[0] else step_data.shape[0]
 
 
+    # Getting the step data within the predicted frames
+    pred_step_data = step_data[start_frame_pred:end_frame_pred]
 
+    # Getting the CoP excursion for the predicted step data
+    CoP_x, CoP_y = get_CoP(pred_step_data)
+    
+    return pred_step_data, CoP_x, CoP_y, start_frame_pred, end_frame_pred    
+
+
+# Function to get the CoP for a step
+def get_CoP(step_data):
+    # step_data: (frames, height, width)
+    F, H, W = step_data.shape
+    
+    # pixel coordinate grids (row = y, col = x). By default: origin at top-left
+    yy, xx = np.indices((H, W))  # yy shape (H,W), xx shape (H,W)
+    
+    
+    # Sums over space for each frame
+    w_sum   = step_data.sum(axis=(1, 2))             # (F,)
+    x_wsum  = (step_data * xx).sum(axis=(1, 2))      # (F,)
+    y_wsum  = (step_data * yy).sum(axis=(1, 2))      # (F,)
+    
+    # Avoid divide-by-zero: where total pressure is 0, set COP to NaN
+    with np.errstate(invalid='ignore', divide='ignore'):
+        CoP_x = x_wsum / w_sum    # (F,)
+        CoP_y = y_wsum / w_sum    # (F,)
+    return CoP_x, CoP_y 
 
 
 
