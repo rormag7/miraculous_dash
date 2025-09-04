@@ -4,6 +4,7 @@ import numpy as np
 import dash
 from dash import dcc, html, Input, Output, State, ctx, dash_table
 import plotly.graph_objects as go
+import plotly.express as px
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -12,6 +13,8 @@ import csv
 import copy
 import pandas as pd
 import math
+from sklearn.decomposition import PCA
+from scipy import ndimage as ndi
 from ultralytics import YOLO
 step_identification_model_l = YOLO(r'C:\Users\rorym\Downloads\FALL 2025\Applied Project\Code\Model_Weights\Step_Identification\yolov8l_best.pt')  # Loading best trained model
 
@@ -427,7 +430,7 @@ def update_app(add_clicks, remove_clicks, relayout_data,
 
 # Callback for analyzing data from the selected step
 @app.callback(
-    Output("CPEI-output", "figure"),
+    #Output("CPEI-output", "figure"),
     Input("analyze-selected", "n_clicks"),
     State("bbox-table", "selected_rows"),
     State("bbox-table", "data"),
@@ -627,44 +630,541 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 @app.callback(
     #Output("avg-left-output", "figure"),
     #Output("avg-right-output", "figure"),
+    Output("CPEI-output1", "figure"),
+    Output("CPEI-output", "figure", allow_duplicate=True),
     Input("compute-average-metrics", "n_clicks"),
     State("bbox-info-dict", "data"),
     State("shared-pass-table","data"),
     prevent_initial_call=True
 )
 def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
-    print()
-    print(f"SHARED PASS DATA: {shared_pass_data}")
-    print()
-    
+
+    # Setting up empty dictionaries to split up steps
+    left_steps = {}
+    right_steps = {}
+   
   # get step frames and CoP
     for pass_id, box_info in bbox_info.items():
         # Getting the pass frames
         pass_start_frame = next(pass_info['start_frame'] for pass_info in shared_pass_data if pass_info['pass_idx'] == int(pass_id))
         pass_end_frame = next(pass_info['end_frame'] for pass_info in shared_pass_data if pass_info['pass_idx'] == int(pass_id))
         pass_data = trial_frames[pass_start_frame:pass_end_frame]
-        print(pass_start_frame)
         
         # Predicting start and end frames for the step and getting the CoP trace
-        for box in box_info:
-            step_frames, box['CoP_x'], box['CoP_y'], box['start_frame'], box['end_frame'] = get_step_frames_and_CoP(box, pass_data, 5000)
-            print(box)
+        for step_number, box in enumerate(box_info):
+            box['original_step_frames'], box['CoP_x'], box['CoP_y'], box['start_frame'], box['end_frame'] = get_step_frames_and_CoP(box, pass_data, 5000)
+            # Adding step number to help ID steps later if necessary. Could prolly find a way to do this from the begining
+            box['step_number'] = step_number
             
-            plt.imshow(step_frames[:].max(0), cmap = jet_cmap)     
+            plt.imshow(box['original_step_frames'][:].max(0), cmap = jet_cmap)     
             plt.plot(box['CoP_x'], box['CoP_y'])
             plt.title("Original Step")
             plt.show()
     
+            box['rc_step_max'], box['rc_CoP_x'], box['rc_CoP_y'], trisect_1, trisect_2 = plot_pc1_aligned(box['original_step_frames'][:].max(0), box['CoP_x'], box['CoP_y'], rot_crop_threshold_kPa=0)
+            
+            plt.imshow(box['rc_step_max'], cmap = jet_cmap)     
+            plt.plot(box['rc_CoP_x'], box['rc_CoP_y'])
+            plt.title("Rotated and Cropped Step")
+            plt.show()
+            
+            # If left step
+            if box['class'] == 1:
+                left_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y']}
+            # If right step
+            elif box['class'] == 2:
+                right_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y']}
+            # If incomplete step, do nothing
+            else:
+                pass 
+          
     
-    
-    
-    ###############################################################################################
-    # rotate heatmap and cop by PC1 and crop by identifying pass direction, toes should be upward #
-    ###############################################################################################
+    out_right = align_and_average_heatmaps_padded(right_steps, alignment_threshold_kPa=1, reference_index=0) 
+    out_left = align_and_average_heatmaps_padded(left_steps, alignment_threshold_kPa=1, reference_index=0)
+    for out_R in [out_right, out_left]:
+        # Plotting the masks and heatmaps to be sure everything looks good
+        R_step_keys = out_R['step_keys']
         
-    # split into left and right
+        # Padded hms and CoPs
+        padded_heatmaps = out_R['padded_heatmaps']
+        padded_CoPs_list = out_R['padded_cop']
+        
+        # Padded masks
+        padded_masks = out_R['padded_masks']
+        
+        # Overlap mask
+        overlap_mask = out_R['avg_mask']
+        
+        # Average
+        avg_hm = out_R['avg_heatmap']
+        avg_cx = out_R['avg_cop']['x']
+        avg_cy = out_R['avg_cop']['y']
+        
+        # Plotting the masks
+        Rm_fig, Rm_axes = plt.subplots(1, len(R_step_keys)+1, figsize=(20,5))
+        for i, R_step_key in enumerate(R_step_keys):
+            padded_m = padded_masks[i]
+            Rm_axes[i].imshow(padded_m, origin='upper',cmap=jet_cmap)  # same coordinate frame
+            Rm_axes[i].set_title(f"Step {R_step_key} Mask")
+        Rm_axes[len(R_step_keys)].imshow(overlap_mask, origin='upper',cmap=jet_cmap)  # same coordinate frame
+        Rm_axes[len(R_step_keys)].set_title("Step Masks Overlapped")
+        Rm_fig.tight_layout()
+        
+        # Plotting the heatmaps
+        R_fig, R_axes = plt.subplots(1, len(R_step_keys)+1, figsize=(20,5))
+        for i, R_step_key in enumerate(R_step_keys):
+            padded_CoP_x = padded_CoPs_list[i]['x']
+            padded_CoP_y = padded_CoPs_list[i]['y']
+            padded_hm = padded_heatmaps[i]
+            
+            R_axes[i].imshow(padded_hm, origin='upper',cmap=jet_cmap)  # same coordinate frame
+            R_axes[i].plot(padded_CoP_x, padded_CoP_y, linewidth=2)    # overlay avg CoP trajectory
+            R_axes[i].set_title(f"Step {R_step_key} Heatmap")
+            #plt.show()
+        R_axes[len(R_step_keys)].imshow(avg_hm, origin='upper',cmap=jet_cmap)  # same coordinate frame
+        R_axes[len(R_step_keys)].plot(avg_cx, avg_cy, linewidth=2)    # overlay avg CoP trajectory
+        R_axes[len(R_step_keys)].set_title("Steps Average Heatmap")
+        R_fig.tight_layout()
+        plt.show()
+        
+        
+       
+    fig = go.Figure()
+
+    # Heatmap (origin='upper' -> reverse y-axis in Plotly)
+  
+    fig= px.imshow(
+         avg_hm,
+         color_continuous_scale = plotly_jet,                 
+         #zmin=np.nanmin(avg_hm),
+         #zmax=np.nanmax(avg_hm),
+         #colorbar=dict(title="Value"),
+         #hovertemplate="x=%{x}<br>y=%{y}<br>z=%{z}<extra></extra>"
+     )
     
-    # get average step
+    
+    # Avg CoP trajectory
+    fig.add_trace(
+        go.Scatter(
+            x=avg_cx,
+            y=avg_cy,
+            mode="lines",
+            line=dict(width=2),
+            name="Avg CoP"
+        )
+    )
+    
+    # (Optional) mark start/end of CoP
+    # fig.add_trace(go.Scatter(x=[avg_cx[0]], y=[avg_cy[0]], mode="markers", name="Start"))
+    # fig.add_trace(go.Scatter(x=[avg_cx[-1]], y=[avg_cy[-1]], mode="markers", name="End"))
+    
+    fig.update_layout(
+        title="Steps Average Heatmap",
+        #template="plotly_white",
+        #margin=dict(l=10, r=10, t=40, b=10),
+        #xaxis=dict(constrain="domain"),
+        #yaxis=dict(scaleanchor="x", scaleratio=1, autorange="reversed")  # keeps image coords + square pixels
+    )
+
+    return fig, fig
+
+# ---------- helpers ----------
+
+def make_active_mask(hm, alignment_threshold_kPa):
+    """Boolean mask of 'active' cells using an absolute kPa threshold. NaNs never active."""
+    return np.isfinite(hm) & (hm >= alignment_threshold_kPa)
+
+def phase_correlation_shift(ref_mask, mov_mask):
+    """Integer-pixel shift (dy, dx) to align mov_mask to ref_mask via phase correlation."""
+    A = ref_mask.astype(float)
+    B = mov_mask.astype(float)
+    FA = np.fft.rfft2(A)
+    FB = np.fft.rfft2(B)
+    R  = FA * np.conj(FB)
+    R /= (np.abs(R) + 1e-12)
+    cc = np.fft.irfft2(R, s=A.shape)
+    peak_y, peak_x = np.unravel_index(np.argmax(cc), cc.shape)
+    H, W = A.shape
+    dy = peak_y if peak_y <= H // 2 else peak_y - H
+    dx = peak_x if peak_x <= W // 2 else peak_x - W
+    return int(dy), int(dx)
+
+def shift_with_nan(arr, dy, dx):
+    """Shift a float heatmap by (dy, dx). Newly exposed pixels become NaN."""
+    return ndi.shift(arr, shift=(dy, dx), order=1, mode='constant', cval=np.nan, prefilter=False)
+
+def shift_mask(mask, dy, dx):
+    """Shift a boolean mask by (dy, dx) with nearest-neighbor so it stays crisp."""
+    shifted = ndi.shift(mask.astype(float), shift=(dy, dx), order=0, mode='constant', cval=0.0, prefilter=False)
+    return shifted.astype(bool)
+
+
+def pad_to_target_canvas(arr, target_shape, is_mask=False):
+    """
+    Pad a 2D array into the center of a fixed canvas (no resizing).
+    Returns (canvas, (r0, c0)) where (r0, c0) is the top-left insertion offset.
+    Heatmaps: float canvas filled with NaN; Masks: bool canvas filled with False.
+    """
+    Ht, Wt = target_shape
+    H, W = arr.shape
+    if H > Ht or W > Wt:
+        raise ValueError(f"Array {H}x{W} is larger than target canvas {Ht}x{Wt} (no resizing allowed).")
+
+    r0 = (Ht - H) // 2
+    c0 = (Wt - W) // 2
+
+    if is_mask:
+        canvas = np.zeros((Ht, Wt), dtype=bool)
+    else:
+        canvas = np.full((Ht, Wt), 0, dtype=float)
+
+    canvas[r0:r0+H, c0:c0+W] = arr
+    return canvas, (r0, c0)
+
+def pad_list_to_target(arrs, target_shape, is_mask=False):
+    """Returns (padded_list, offsets_list). offsets[i] = (r0, c0) used for arrs[i]."""
+    padded, offsets = [], []
+    for a in arrs:
+        p, off = pad_to_target_canvas(a, target_shape, is_mask=is_mask)
+        padded.append(p); offsets.append(off)
+    return padded, offsets
+
+def nanmean_stack(arrs):
+    """NaN-safe per-pixel mean over identically shaped float arrays. NaN where no coverage."""
+    stack = np.stack(arrs, axis=0)
+    valid = np.isfinite(stack)
+    num = np.nansum(stack, axis=0)
+    den = valid.sum(axis=0)
+    out = num / np.maximum(den, 1)
+    out[den == 0] = np.nan
+    return out
+
+def _resample_polyline_xy(x, y, n_points=101):
+    """
+
+    Resample a 2D polyline (x,y) to a fixed number of points using
+    uniform param (index-based) interpolation. NaNs are dropped.
+    Returns (xr, yr) as float arrays length n_points; NaNs if insufficient points.
+    """
+    x = np.asarray(x, float); y = np.asarray(y, float)
+    valid = np.isfinite(x) & np.isfinite(y)
+    if valid.sum() < 2:
+        return np.full(n_points, np.nan), np.full(n_points, np.nan)
+    x = x[valid]; y = y[valid]
+    t = np.linspace(0, len(x)-1, n_points)
+    idx = np.arange(len(x))
+    xr = np.interp(t, idx, x)
+    yr = np.interp(t, idx, y)
+    return xr, yr
+
+def _clip_to_canvas(x, y, H, W):
+    """Optionally clip coordinates to the canvas bounds (keeps floats)."""
+    x = np.clip(x, 0, W-1)
+    y = np.clip(y, 0, H-1)
+    return x, y
+
+# ---------- core pipeline (padding + translation + CoP averaging) ----------
+
+def align_and_average_heatmaps_padded(
+    side_steps_dict, # Only contains either L or R steps. 
+    alignment_threshold_kPa,
+    reference_index=0,
+    avg_cop_points=101
+):
+    """
+    Inputs
+    ------
+    all_steps_info : dict
+        {'step_i': {'rc_step_max': 2D float array,
+                    'rc_CoP_x':  1D float array (columns),
+                    'rc_CoP_y':  1D float array (rows)}},
+                    lots of other info that won't be used...
+        'rc' indicates that the data has been rotated vertically and cropped
+    alignment_threshold_kPa : float
+        Absolute threshold (kPa) to build binary masks for alignment.
+    reference_index : int
+        Which padded sample to use as the registration reference (by insertion order of dict).
+    avg_cop_points : int
+
+        Number of samples for the time-normalized average CoP trajectory.
+
+    Returns (dict)
+    --------------
+    {
+      'padded_heatmaps':   list[H x W float],     # before alignment (NaN background)
+      'padded_masks':      list[H x W bool],      # before alignment
+      'aligned_heatmaps':  list[H x W float],     # after alignment
+      'aligned_masks':     list[H x W bool],      # after alignment
+      'avg_heatmap':       H x W float,           # NaN where no coverage
+      'overlap_mask':      H x W bool,            # union of aligned masks
+      'avg_mask':          H x W float,           # per-pixel fraction in [0,1]
+      'shifts':            list[(dy, dx)],        # one per input, ref gets (0,0)
+      'padded_cop':        list[{'x': 1D, 'y': 1D}],
+      'aligned_cop':       list[{'x': 1D, 'y': 1D}],
+      'avg_cop':           {'x': 1D length=avg_cop_points, 'y': 1D length=avg_cop_points}
+    }
+    """
+    # Preserve insertion order of the dict
+    step_keys = list(side_steps_dict.keys())
+
+    # 0) Collect heatmaps and infer target canvas (largest H/W + small margin)
+    H_list, W_list, heatmaps, cop_x_list, cop_y_list = [], [], [], [], []
+    for k in step_keys:
+        hm = side_steps_dict[k]['rc_step_max']
+        H_list.append(hm.shape[0]); W_list.append(hm.shape[1])
+        heatmaps.append(hm)
+        cop_x_list.append(np.asarray(side_steps_dict[k]['rc_CoP_x'], float))
+        cop_y_list.append(np.asarray(side_steps_dict[k]['rc_CoP_y'], float))
+
+    target_H = max(H_list) + 3
+    target_W = max(W_list) + 3
+    target_shape = (target_H, target_W)
+
+    # 1) Build masks on original bboxes (absolute threshold)
+    masks = [make_active_mask(hm, alignment_threshold_kPa) for hm in heatmaps]
+
+    # 2) Pad to fixed canvas (centered) and keep per-sample offsets
+    padded_heatmaps, heat_offsets = pad_list_to_target(heatmaps, target_shape, is_mask=False)
+    padded_masks,    mask_offsets = pad_list_to_target(masks,    target_shape, is_mask=True)
+    # (offsets are identical for heatmap/mask, but we keep both for clarity)
+    # heat_offsets[i] = (r0, c0) added to original CoP to land in the canvas before alignment
+
+    # 3) Reference mask (already padded)
+    ref_mask = padded_masks[reference_index]
+
+    # 4) Align everyone to the reference (on masks), then shift heatmaps accordingly
+    aligned_heatmaps, aligned_masks, shifts = [], [], []
+    for i, (hm_pad, m_pad) in enumerate(zip(padded_heatmaps, padded_masks)):
+        if i == reference_index or m_pad.sum() < 5:
+            aligned_heatmaps.append(hm_pad)
+            aligned_masks.append(m_pad)
+            shifts.append((0, 0))
+            continue
+        dy, dx = phase_correlation_shift(ref_mask, m_pad)
+        aligned_heatmaps.append(shift_with_nan(hm_pad, dy, dx))
+        aligned_masks.append(shift_mask(m_pad, dy, dx))
+        shifts.append((dy, dx))
+
+    # 5) Averages & overlaps
+    avg_heatmap = nanmean_stack(aligned_heatmaps)
+    mask_stack  = np.stack([m.astype(float) for m in aligned_masks], axis=0)
+    avg_mask    = mask_stack.mean(axis=0)          # fraction (0..1)
+    overlap_mask = mask_stack.sum(axis=0) > 0
+
+    # 6) Transform CoP traces into the same canvas & alignment
+    padded_cop = []
+    aligned_cop = []
+
+    for i, (cx, cy) in enumerate(zip(cop_x_list, cop_y_list)):
+        # drop non-finite samples
+        valid = np.isfinite(cx) & np.isfinite(cy)
+        cx = cx[valid]; cy = cy[valid]
+
+        # add padding offset to land in canvas coords
+        r0, c0 = heat_offsets[i]  # rows (y), cols (x)
+        cx_pad = cx + c0
+        cy_pad = cy + r0
+
+        # apply alignment shift to reach the avg_heatmap frame
+        dy, dx = shifts[i]
+        cx_aln = cx_pad + dx
+        cy_aln = cy_pad + dy
+
+        padded_cop.append({'x': cx_pad, 'y': cy_pad})
+        aligned_cop.append({'x': cx_aln, 'y': cy_aln})
+
+    # 7) Time-normalized average CoP (resample each aligned trace to a common length)
+    resampled_x = []
+    resampled_y = []
+    for tr in aligned_cop:
+        xr, yr = _resample_polyline_xy(tr['x'], tr['y'], n_points=avg_cop_points)
+        resampled_x.append(xr); resampled_y.append(yr)
+
+    resampled_x = np.stack(resampled_x, axis=0)  # [Nsteps, T]
+    resampled_y = np.stack(resampled_y, axis=0)
+
+    # NaN-safe mean (shouldn’t have NaNs if traces had >=2 valid points)
+    avg_cop_x = np.nanmean(resampled_x, axis=0)
+    avg_cop_y = np.nanmean(resampled_y, axis=0)
+
+    return {
+        'padded_heatmaps':  padded_heatmaps,
+        'padded_masks':     padded_masks,
+        'aligned_heatmaps': aligned_heatmaps,
+        'aligned_masks':    aligned_masks,
+        'avg_heatmap':      avg_heatmap,
+        'overlap_mask':     overlap_mask,
+        'avg_mask':         avg_mask,
+        'shifts':           shifts,
+        'padded_cop':       padded_cop,        # list of per-step traces in padded (pre-align) canvas
+        'aligned_cop':      aligned_cop,       # list of per-step traces in aligned canvas
+        'avg_cop':          {'x': avg_cop_x, 'y': avg_cop_y, 'n_points': avg_cop_points},
+        'target_shape':     target_shape,      # handy to keep around
+        'step_keys':        step_keys          # maps list indices back to your dict keys
+    }
+
+# Function to rotate heatmap, crop it to activated frames and CoP and retreive trisections
+def plot_pc1_aligned(step_data, CoP_x, CoP_y, rot_crop_threshold_kPa):
+    H, W = step_data.shape
+    
+    # rot_crop_threshold_kPa is the threshold pressure used to rotate and crop the step
+    mask = np.isfinite(step_data) & (step_data >  rot_crop_threshold_kPa)
+    
+    
+    yy, xx = np.indices((H, W))
+    X = np.column_stack([xx[mask].ravel(), yy[mask].ravel()])
+
+    pca = PCA(n_components=2).fit(X)
+    comp1 = pca.components_[0]
+    PC1_angle_rads = np.arctan2(comp1[1], comp1[0])
+    PC1_angle = np.degrees(PC1_angle_rads)
+
+    # Rotate image (you’re using reshape=True)
+    rotated = ndi.rotate(
+        step_data,
+        angle=PC1_angle,     # CCW degrees
+        order=1,
+        reshape=True,
+        mode='constant',
+        cval=0.0,
+        prefilter=False
+    )
+
+    # Rotate CoP the *same way* (rotation + translation due to reshape=True)
+    CoP_x_new, CoP_y_new = rotate_CoP_trace(
+        np.asarray(CoP_x), np.asarray(CoP_y),
+        H, W,
+        angle_deg=PC1_angle,   # MUST match the angle passed to ndi.rotate
+        reshape=True
+    )
+
+    # Getting rid of nan values in the CoP trace. Note that this will change the shape of the CoP trace array so the video will get funky
+    non_nan_mask_x = ~np.isnan(CoP_x_new)
+    non_nan_mask_y = ~np.isnan(CoP_y_new)
+
+    CoP_x_new = CoP_x_new[non_nan_mask_x]
+    CoP_y_new = CoP_y_new[non_nan_mask_y]
+
+
+    # Crop the heatmap, shift CoP, and plit the foot into 3 regions
+    rot_H, rot_W = rotated.shape
+
+    
+    # Find the horizontal bounds of the foot
+    with np.errstate(all='ignore'):
+        col_max = np.nanmax(rotated, axis=0)
+    active = col_max > rot_crop_threshold_kPa
+
+    # Find first and last active columns and slice between them
+    left = int(np.argmax(active))                   # first True
+    right = rot_W - int(np.argmax(active[::-1]))        # one past last True
+    heatmap_new = rotated[:, left:right]
+
+    # Shift the CoP trace
+    CoP_x_new = CoP_x_new - left
+
+
+    # ROTATING TO VERTICAL
+    # Averaging the first and last ~10% of points that are not NaN
+    CoP_x_start = np.mean(CoP_x_new[~np.isnan(CoP_x_new)][:len(CoP_x_new)//10])
+    CoP_x_end = np.mean(CoP_y_new[~np.isnan(CoP_y_new)][-len(CoP_y_new)//10:])
+
+    
+    # Getting the center of the heatmap
+    H, W = heatmap_new.shape
+
+    
+    # If the CoP goes from left to right, rotate the heatmap and the cop 90 deg CW, otherwise 90 CCW
+    if CoP_x_start > CoP_x_end:
+        CoP_x_new, CoP_y_new = rotate_CoP_trace(
+        np.asarray(CoP_x_new), np.asarray(CoP_y_new),
+        H, W,
+        angle_deg=-90,   # MUST match the angle passed to ndi.rotate
+        reshape=True)
+        heatmap_new = np.rot90(heatmap_new, k=-1)
+
+    else:
+        CoP_x_new, CoP_y_new = rotate_CoP_trace(
+        np.asarray(CoP_x_new), np.asarray(CoP_y_new),
+        H, W,
+        angle_deg=90,   
+        reshape=True)
+        heatmap_new = np.rot90(heatmap_new, k=1)
+    
+    
+
+
+    # Get the trisections
+    cropped_H = heatmap_new.shape[0]
+    trisect_1 = round(cropped_H / 3)
+    trisect_2 = round(cropped_H *2 / 3)
+
+    # Get boundary points
+    #x_upper, y_upper, x_lower, y_lower = get_ML_boundary_points(heatmap_new, trisect_1, trisect_2, boundary_pt_threshold_kPa=3)
+
+    return heatmap_new, CoP_x_new, CoP_y_new, trisect_1, trisect_2#, x_upper, y_upper, x_lower, y_lower 
+
+# Helper functions
+
+def get_CoP(step_data):
+    # step_data: (frames, height, width)
+    F, H, W = step_data.shape
+    
+    # pixel coordinate grids (row = y, col = x). By default: origin at top-left
+    yy, xx = np.indices((H, W))  # yy shape (H,W), xx shape (H,W)
+    
+    
+    # Sums over space for each frame
+    w_sum   = step_data.sum(axis=(1, 2))             # (F,)
+    x_wsum  = (step_data * xx).sum(axis=(1, 2))      # (F,)
+    y_wsum  = (step_data * yy).sum(axis=(1, 2))      # (F,)
+    
+    # Avoid divide-by-zero: where total pressure is 0, set COP to NaN
+    with np.errstate(invalid='ignore', divide='ignore'):
+        CoP_x = x_wsum / w_sum    # (F,)
+        CoP_y = y_wsum / w_sum    # (F,)
+    return CoP_x, CoP_y 
+
+# Funcion to rotate the CoP trace according to the reshaped heatmap
+def rotate_CoP_trace(x, y, H, W, angle_deg, reshape=True):
+    """
+    Rotate point coordinates (x=cols, y=rows) the same way ndi.rotate does.
+
+    Returns rotated (x', y') in the coordinate system of the output image.
+    If reshape=True, includes the translation that places data on the expanded canvas.
+    """
+    # Center of original image
+    cx, cy = W / 2.0, H / 2.0
+
+    # Rotation matrix (same convention as your code: standard CCW in (x,y))
+    theta = np.deg2rad(-angle_deg)
+    R = np.array([[np.cos(theta), -np.sin(theta)],
+                  [np.sin(theta),  np.cos(theta)]])
+
+    # Rotate points about the original center
+    pts = np.vstack([x - cx, y - cy])          # shape (2, N)
+    xr, yr = R @ pts
+    xr += cx; yr += cy                          # back to image coords
+
+    if not reshape:
+        return xr, yr
+
+    # --- Compute the translation that ndi.rotate(reshape=True) applies ---
+    # Rotate the four image corners, then translate so min corner maps to (0,0)
+    # Use pixel-center coordinates [0..W-1], [0..H-1]
+    corners = np.array([[0,      0     ],
+                        [W - 1., 0     ],
+                        [W - 1., H - 1.],
+                        [0,      H - 1.]], dtype=float)
+    cpts = (R @ (corners.T - np.array([[cx],[cy]]))).T + np.array([cx, cy])
+
+    min_x, min_y = cpts[:,0].min(), cpts[:,1].min()
+    # This is the offset that places the rotated content within the new canvas
+    tx, ty = -min_x, -min_y
+
+    return xr + tx, yr + ty
+
+
 
 # Function to get predicted step frames and CoP trace. The outputs step_data, CoP_x, and CoP_y will only output frames/values within the predicted start and end frames. We will still output true start and end frames for debugging purposes
 def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
@@ -835,7 +1335,7 @@ tab2 = html.Div([
         ], style={'display': 'flex', 'flexDirection': 'row',  
                   "overflow": "hidden",
                   "width": "100%"}),
-        html.Div(dcc.Graph(id="CPEI-output"))
+        html.Div([dcc.Graph(id="CPEI-output"), dcc.Graph(id="CPEI-output1")])
 
 ])
 
