@@ -647,15 +647,20 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         
         # Predicting start and end frames for the step and getting the CoP trace
         for box in box_info:
-            step_data, box['CoP_x'], box['CoP_y'], box['start_frame'], box['end_frame'] = get_step_frames_and_CoP(box, pass_data, 5000)
+            step_frames, box['CoP_x'], box['CoP_y'], box['start_frame'], box['end_frame'] = get_step_frames_and_CoP(box, pass_data, 5000)
+            print(box)
             
-         
-            plt.imshow(step_data[:].max(0), cmap = jet_cmap)     
+            plt.imshow(step_frames[:].max(0), cmap = jet_cmap)     
             plt.plot(box['CoP_x'], box['CoP_y'])
+            plt.title("Original Step")
             plt.show()
     
-    # rotate heatmap and cop by PC1 and crop by identifying pass direction, toes should be upward
-    # there is no need to rotate everything twice, so I need to rewrite those functions
+    
+    
+    
+    ###############################################################################################
+    # rotate heatmap and cop by PC1 and crop by identifying pass direction, toes should be upward #
+    ###############################################################################################
         
     # split into left and right
     
@@ -672,7 +677,7 @@ def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
     
     # All frames from the pass within the step region
     step_data = pass_data[:, y_min:y_max, x_min:x_max]
-    step_data = np.rot90(step_data, axes=(1,2))
+    #step_data = np.rot90(step_data, axes=(1,2))
     # Sum pressures in each frame
     total_pressure_per_frame = step_data.sum(axis=(1, 2))
     
