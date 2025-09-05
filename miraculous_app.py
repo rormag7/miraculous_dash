@@ -5,6 +5,7 @@ import dash
 from dash import dcc, html, Input, Output, State, ctx, dash_table
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -113,7 +114,9 @@ app.layout = html.Div([
     dcc.Store(id="shared-pass-table"), #This will allow pass info to be used among all tabs
     dcc.Store(id="pass-max-dict"), #This will allow pass_max arrays from all passes to be used among all tabs
     dcc.Store(id="bbox-info-dict"), # This will allow for bbox info from all passes to be used among all tabs
-    dcc.Store(id="pass-max-z") # Also add a store to hold the z for the selected pass
+    dcc.Store(id="pass-max-z"), # Also add a store to hold the z for the selected pass
+    dcc.Store(id="avg-left-data"),
+    dcc.Store(id="avg-right-data")
 ])
 
 
@@ -626,12 +629,121 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 #####################
 
 
+@app.callback(
+    Output("avg-left-output", "figure"),
+    Output("avg-right-output", "figure"),
+    Input("avg-left-data", "data"),
+    Input("avg-right-data", "data"),
+    prevent_initial_call=True
+)
+def create_avg_figs(avg_left_data, avg_right_data):
+    
+    # Heatmap (origin='upper' -> reverse y-axis in Plotly)
+    for i, avg_side_data in enumerate([avg_left_data, avg_right_data]):
+        avg_hm = avg_side_data['avg_heatmap']
+        avg_cx = avg_side_data['avg_cop']['x']
+        avg_cy = avg_side_data['avg_cop']['y']
+        
+        fig = go.Figure()
+        fig= px.imshow(
+             avg_hm,
+             color_continuous_scale = plotly_jet,                 
+             #zmin=np.nanmin(avg_hm),
+             #zmax=np.nanmax(avg_hm),
+             #colorbar=dict(title="Value"),
+             #hovertemplate="x=%{x}<br>y=%{y}<br>z=%{z}<extra></extra>"
+         )
+        
+        
+        # Avg CoP trajectory
+        fig.add_trace(
+            go.Scatter(
+                x=avg_cx,
+                y=avg_cy,
+                mode="lines",
+                line=dict(width=2),
+                name="Avg CoP"
+            )
+        )
+        
+        # (Optional) mark start/end of CoP
+        # fig.add_trace(go.Scatter(x=[avg_cx[0]], y=[avg_cy[0]], mode="markers", name="Start"))
+        # fig.add_trace(go.Scatter(x=[avg_cx[-1]], y=[avg_cy[-1]], mode="markers", name="End"))
+        
+        
+        # If this is the left side data, save to avg_left_fig
+        if i == 0:
+            fig.update_layout(
+                title="Average Left Step",
+                #template="plotly_white",
+                #margin=dict(l=10, r=10, t=40, b=10),
+                #xaxis=dict(constrain="domain"),
+                #yaxis=dict(scaleanchor="x", scaleratio=1, autorange="reversed")  # keeps image coords + square pixels
+            )
+            
+            avg_left_fig = fig
+            
+        # Else save to avg_right_side   
+        else:
+            fig.update_layout(
+                title="Average Right Step",
+                #template="plotly_white",
+                #margin=dict(l=10, r=10, t=40, b=10),
+                #xaxis=dict(constrain="domain"),
+                #yaxis=dict(scaleanchor="x", scaleratio=1, autorange="reversed")  # keeps image coords + square pixels
+            )
+            
+            avg_right_fig = fig
+            
+    combo = make_subplots(
+    rows=1, cols=2,
+    subplot_titles=["Average Left", "Average Right"]
+    )
+    
+    # copy traces into the subplots
+    for tr in avg_left_fig.data:
+        combo.add_trace(tr, row=1, col=1)
+    
+    for tr in avg_right_fig.data:
+        combo.add_trace(tr, row=1, col=2)
+    
+    # give each subplot its own coloraxis (so each has its own colorbar/scale)
+    combo.update_layout(
+        coloraxis = getattr(avg_left_fig.layout,  "coloraxis",  None),
+        coloraxis2= getattr(avg_right_fig.layout, "coloraxis",  None),
+    )
+    
+    # re-point the right-side traces to use coloraxis2
+    left_n = len(avg_left_fig.data)
+    for i in range(left_n, len(combo.data)):
+        if getattr(combo.data[i], "coloraxis", None) == "coloraxis":
+            combo.data[i].update(coloraxis="coloraxis2")
+    
+    # image-style axes (top-left origin + square pixels)
+    combo.update_yaxes(autorange="reversed", scaleanchor="x",  scaleratio=1, row=1, col=1)
+    combo.update_yaxes(autorange="reversed", scaleanchor="x2", scaleratio=1, row=1, col=2)
+    combo.update_xaxes(constrain="domain", row=1, col=1)
+    combo.update_xaxes(constrain="domain", row=1, col=2)
+    
+    combo.update_layout(
+        height=520, width=1100,
+        title="Average Heatmaps — Left vs Right",
+        margin=dict(l=10, r=10, t=50, b=10),
+        template="plotly_white"
+    )
+            
+    return avg_left_fig, combo
+
+
+
+
+
+
+
 # Callback to get average step metrics
 @app.callback(
-    #Output("avg-left-output", "figure"),
-    #Output("avg-right-output", "figure"),
-    Output("CPEI-output1", "figure"),
-    Output("CPEI-output", "figure", allow_duplicate=True),
+    Output("avg-left-data", "data"),
+    Output("avg-right-data", "data"),
     Input("compute-average-metrics", "n_clicks"),
     State("bbox-info-dict", "data"),
     State("shared-pass-table","data"),
@@ -679,9 +791,9 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
                 pass 
           
     
-    out_right = align_and_average_heatmaps_padded(right_steps, alignment_threshold_kPa=1, reference_index=0) 
-    out_left = align_and_average_heatmaps_padded(left_steps, alignment_threshold_kPa=1, reference_index=0)
-    for out_R in [out_right, out_left]:
+    avg_right = align_and_average_heatmaps_padded(right_steps, alignment_threshold_kPa=1, reference_index=0) 
+    avg_left = align_and_average_heatmaps_padded(left_steps, alignment_threshold_kPa=1, reference_index=0)
+    for out_R in [avg_right, avg_left]:
         # Plotting the masks and heatmaps to be sure everything looks good
         R_step_keys = out_R['step_keys']
         
@@ -727,8 +839,9 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         R_fig.tight_layout()
         plt.show()
         
+    return avg_left, avg_right
         
-       
+"""      
     fig = go.Figure()
 
     # Heatmap (origin='upper' -> reverse y-axis in Plotly)
@@ -767,7 +880,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
     )
 
     return fig, fig
-
+"""
 # ---------- helpers ----------
 
 def make_active_mask(hm, alignment_threshold_kPa):
