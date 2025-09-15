@@ -3,6 +3,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import numpy as np
 import dash
 from dash import dcc, html, Input, Output, State, ctx, dash_table
+#from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -85,6 +86,126 @@ zmax_val = float(np.max(trial_frames))
 marks = {0: "Start", num_frames - 1: "End"}
 
 
+
+
+#####################
+##   TAB LAYOUTS   ##
+#####################
+tab1 = html.Div([
+        html.Div([
+            dcc.Graph(id="heatmap-frame", style={"height": "435px", "width": "990px", "marginBottom": "0px"}),
+            html.Div(html.Button("▶ Play", id="play-pause-btn", n_clicks=0), style={'textAlign': 'center'}),
+            dcc.Interval(id="frame-interval", interval=20, disabled=True),  # 20 ms per frame
+            dcc.Slider(
+                id="frame-slider",
+                min=0,
+                max=num_frames - 1,
+                value=0,
+                step=1,
+                marks=marks,
+                tooltip={"placement": "bottom", "always_visible": True},
+                updatemode='mouseup'
+            )], style={'flex': '2', 'paddingRight': '20px'}),
+
+        html.Div([
+            html.H4("Pass Selection Table", style={'textAlign': 'center'}),
+            dash_table.DataTable(
+                id='pass-table',
+                columns=[
+                    {"name": "Pass #", "id": "pass_idx", "type": "numeric", "editable": False},
+                    {"name": "Start Frame", "id": "start_frame", "type": "numeric", "editable": True},
+                    {"name": "End Frame", "id": "end_frame", "type": "numeric", "editable": True}
+                ],
+                data=[],
+                editable=True,
+                row_deletable=False,
+                style_table={'overflowX': 'auto'},
+                style_cell={'textAlign': 'center'}
+            ),
+            html.Div([html.Button("Add Pass", id="add-pass", n_clicks=0, style={'marginTop': '10px', 'marginRight': '10px'}),
+                      html.Button("Remove Pass", id="remove-pass", n_clicks=0)], style={'textAlign': 'center'}),
+                
+            html.Div([html.Button("Save and Process Passes", id="process-passes", n_clicks=0, style={'marginTop': '10px'}),
+                      dcc.Loading(id="loading-box", type="default", children=html.Div(id="processing-complete-message"), style={'marginTop': '70px'})] , style={'textAlign': 'center'})
+                     
+            ], style={'flex': '1'})
+    ], style={'display': 'flex', 'flexDirection': 'row'})
+
+
+
+
+tab2 = html.Div([
+    html.H4("Select a pass to view"),
+    
+
+    html.Div(id='passes-dropdown'), # Div to display dropdown
+    
+    html.Div([
+            html.Div(dcc.Graph(id="pass-max", 
+                               style={"height": "420px", "width": "940px", "marginBottom": "0px"},
+                               config={'editable': False, 'edits': {'shapePosition': True}}), 
+                               style={'flex': "0 0 30%", 'paddingRight': '0px'}),
+            html.Div([html.Div([
+                html.H4("Step Identification Table", style={'textAlign': 'center'}),
+                dash_table.DataTable(
+                        id="bbox-table",
+                        columns=[
+                            {"name": "Step #", "id": "step_idx", "editable": False},
+                            {"name": "Class", "id": "class", "presentation": "dropdown"},
+                            {"name": "x0", "id": "x0", "type": "numeric"},
+                            {"name": "y0", "id": "y0", "type": "numeric"},
+                            {"name": "x1", "id": "x1", "type": "numeric"},
+                            {"name": "y1", "id": "y1", "type": "numeric"},
+                        ],
+                        dropdown={
+                            "class": {
+                                "options": [{"label": class_labels[i], "value": i} for i in class_labels]
+                            }
+                        },
+                        row_selectable="single",
+                        editable=True,
+                        style_table={"overflowX": "auto"},
+                        style_cell={"textAlign": "center"},
+                    ),
+               
+                html.Button("Add Box", id="add-box", n_clicks=0, style={"marginTop": "10px", "marginRight": "10px"}),
+                html.Button("Remove Selected Box", id="remove-selected", n_clicks=0)
+            ], style={'textAlign': 'center', "marginBottom": "10px", 'flex': "0 0 70%"}),
+                
+                html.Div(html.Button("Analyze Selected Step", id="analyze-selected", n_clicks=0), style={"marginTop": "15px", 'textAlign': 'center'}),
+                
+                html.Div([html.Button("Compute Average Metrics", id="compute-average-metrics", n_clicks=0, style={"marginTop": "15px", 'textAlign': 'center'}),
+                          dcc.Loading(id="loading-box", type="default", children=html.Div(id="averaging-complete-message"), style={'marginTop': '70px'})] , style={"marginBottom": "50px",'textAlign': 'center'}),  # WIP 
+                
+        
+    
+              ],style={'flex': '1'})
+        ], style={'display': 'flex', 'flexDirection': 'row',  
+                  "overflow": "hidden",
+                  "width": "100%"}),
+        html.Div([dcc.Graph(id="CPEI-output"), dcc.Graph(id="CPEI-output1")])
+
+])
+
+
+
+tab3 = html.Div([
+    html.Div(dcc.Graph(id="avg-steps-combined", style={"height": 520, "width": "100%"}))
+])
+
+
+
+tab4 = html.Div([
+    html.H4("Preview and Generate report PDF"),
+    html.P("meow meow meow TBD")
+])
+
+
+
+
+
+
+#APP LAYOUT
 app.layout = html.Div([
         html.Img(
             src='assets/miraculous.png',
@@ -103,9 +224,8 @@ app.layout = html.Div([
         children=[
             dcc.Tab(label="Pass Selection", value="tab-1"),
             dcc.Tab(label="Step Identification", value="tab-2"),
-            dcc.Tab(label="Mask Adjustment", value="tab-3"),
-            dcc.Tab(label="Metric Calculation", value="tab-4"),
-            dcc.Tab(label="Report Generation", value="tab-5")
+            dcc.Tab(label="Average Step Metrics", value="tab-3", children=tab3),
+            dcc.Tab(label="Report Generation", value="tab-4")
             
         ]
     ),
@@ -121,6 +241,9 @@ app.layout = html.Div([
 
 
 
+
+
+
 @app.callback(
     Output("tabs-content", "children"),
     Input("tabs", "value")
@@ -132,15 +255,11 @@ def render_tab_content(tab):
     elif tab == "tab-2":
         return tab2
     
-    elif tab == "tab-3":
-        return tab3
+    #elif tab == "tab-3":
+        #return tab3
     
     elif tab == "tab-4":
         return tab4
-    
-    elif tab == "tab-5":
-        return tab5
-
 
 
 
@@ -171,7 +290,7 @@ def toggle_play_pause(n, disabled):
 )
 def advance_frame(_n, val, vmin, vmax, step):
     if val is None:
-        raise exceptions.PreventUpdate
+        raise dash.exceptions.PreventUpdate
     nxt = (val + (step or 1))
     return vmin if nxt > vmax else nxt
 
@@ -224,6 +343,7 @@ def update_pass_table(add_clicks, remove_clicks, table_data):
     Output("shared-pass-table", "data"),
     Output("pass-max-dict", "data"),
     Output("bbox-info-dict", "data", allow_duplicate=True),
+    Output("tabs", "value", allow_duplicate=True),                 
     Input("process-passes", "n_clicks"),
     State("pass-table", "data"),
     prevent_initial_call=True
@@ -310,8 +430,7 @@ def process_passes(process_clicks, table_data):
             # Write the data rows
             writer.writerows(table_data)
             
-    
-    return "Passes successfully processed.", table_data, pass_max_dict, pass_preds_dict
+    return "Passes successfully processed.", table_data, pass_max_dict, pass_preds_dict, "tab-2"
 
 
 
@@ -627,130 +746,110 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 #####################
 ## TAB 3 CALLBACKS ##
 #####################
-
-
 @app.callback(
-    Output("avg-left-output", "figure"),
-    Output("avg-right-output", "figure"),
+    Output("avg-steps-combined", "figure"),
+    Input("tabs", "value"),
     Input("avg-left-data", "data"),
     Input("avg-right-data", "data"),
     prevent_initial_call=True
 )
-def create_avg_figs(avg_left_data, avg_right_data):
-    
-    # Heatmap (origin='upper' -> reverse y-axis in Plotly)
-    for i, avg_side_data in enumerate([avg_left_data, avg_right_data]):
-        avg_hm = avg_side_data['avg_heatmap']
-        avg_cx = avg_side_data['avg_cop']['x']
-        avg_cy = avg_side_data['avg_cop']['y']
-        
-        fig = go.Figure()
-        fig= px.imshow(
-             avg_hm,
-             color_continuous_scale = plotly_jet,                 
-             #zmin=np.nanmin(avg_hm),
-             #zmax=np.nanmax(avg_hm),
-             #colorbar=dict(title="Value"),
-             #hovertemplate="x=%{x}<br>y=%{y}<br>z=%{z}<extra></extra>"
-         )
-        
-        
-        # Avg CoP trajectory
-        fig.add_trace(
-            go.Scatter(
-                x=avg_cx,
-                y=avg_cy,
-                mode="lines",
-                line=dict(width=2),
-                name="Avg CoP"
-            )
-        )
-        
-        # (Optional) mark start/end of CoP
-        # fig.add_trace(go.Scatter(x=[avg_cx[0]], y=[avg_cy[0]], mode="markers", name="Start"))
-        # fig.add_trace(go.Scatter(x=[avg_cx[-1]], y=[avg_cy[-1]], mode="markers", name="End"))
-        
-        
-        # If this is the left side data, save to avg_left_fig
-        if i == 0:
-            fig.update_layout(
-                title="Average Left Step",
-                #template="plotly_white",
-                #margin=dict(l=10, r=10, t=40, b=10),
-                #xaxis=dict(constrain="domain"),
-                #yaxis=dict(scaleanchor="x", scaleratio=1, autorange="reversed")  # keeps image coords + square pixels
-            )
-            
-            avg_left_fig = fig
-            
-        # Else save to avg_right_side   
-        else:
-            fig.update_layout(
-                title="Average Right Step",
-                #template="plotly_white",
-                #margin=dict(l=10, r=10, t=40, b=10),
-                #xaxis=dict(constrain="domain"),
-                #yaxis=dict(scaleanchor="x", scaleratio=1, autorange="reversed")  # keeps image coords + square pixels
-            )
-            
-            avg_right_fig = fig
-            
-    combo = make_subplots(
-    rows=1, cols=2,
-    subplot_titles=["Average Left", "Average Right"]
+def create_avg_figs(tab, left_data, right_data):
+    if tab != "tab-3" or not left_data or not right_data:
+        raise dash.exceptions.PreventUpdate
+
+    # Unpack → allow different shapes
+    hm_l = np.asarray(left_data["avg_heatmap"])
+    cx_l = left_data["avg_cop"]["x"]
+    cy_l = left_data["avg_cop"]["y"]
+
+    hm_r = np.asarray(right_data["avg_heatmap"])
+    cx_r = right_data["avg_cop"]["x"]
+    cy_r = right_data["avg_cop"]["y"]
+
+    # Shared scale (compute per-array, then take scalar min/max)
+    # This avoids stacking arrays of different shapes.
+    try:
+        vmin = float(min(np.nanmin(hm_l), np.nanmin(hm_r)))
+        vmax = float(max(np.nanmax(hm_l), np.nanmax(hm_r)))
+    except ValueError:
+        # Handles all-NaN slices or other oddities
+        raise dash.exceptions.PreventUpdate
+
+    fig = make_subplots(
+        rows=1, cols=2, horizontal_spacing=0.08,
+        subplot_titles=("Average Left", "Average Right")
     )
-    
-    # copy traces into the subplots
-    for tr in avg_left_fig.data:
-        combo.add_trace(tr, row=1, col=1)
-    
-    for tr in avg_right_fig.data:
-        combo.add_trace(tr, row=1, col=2)
-    
-    # give each subplot its own coloraxis (so each has its own colorbar/scale)
-    combo.update_layout(
-        coloraxis = getattr(avg_left_fig.layout,  "coloraxis",  None),
-        coloraxis2= getattr(avg_right_fig.layout, "coloraxis",  None),
+
+    # Heatmaps (shared coloraxis → single colorbar)
+    fig.add_trace(
+        go.Heatmap(z=hm_l, zmin=vmin, zmax=vmax, coloraxis="coloraxis"),
+        row=1, col=1
     )
+    fig.add_trace(
+        go.Heatmap(z=hm_r, zmin=vmin, zmax=vmax, coloraxis="coloraxis"),
+        row=1, col=2
+    )
+
+    # CoP overlays (hide duplicate legends on right)
+    fig.add_trace(go.Scatter(x=cx_l, y=cy_l, mode="lines", name="Avg CoP", line=dict(width=2, color='coral')), 1, 1)
+    fig.add_trace(go.Scatter(x=[cx_l[0]],  y=[cy_l[0]],  mode="markers",
+                             marker=dict(size=9, color='orange'),
+                             name="Start"), 1, 1)
     
-    # re-point the right-side traces to use coloraxis2
-    left_n = len(avg_left_fig.data)
-    for i in range(left_n, len(combo.data)):
-        if getattr(combo.data[i], "coloraxis", None) == "coloraxis":
-            combo.data[i].update(coloraxis="coloraxis2")
+    fig.add_trace(go.Scatter(x=[cx_l[-1]], y=[cy_l[-1]], mode="markers", 
+                             marker=dict(size=9, color='lime'),
+                             name="End"),   1, 1)
+
+    fig.add_trace(go.Scatter(x=cx_r, y=cy_r, mode="lines", name="Avg CoP", line=dict(width=2,  color='coral'), showlegend=False), 1, 2)
+    fig.add_trace(go.Scatter(x=[cx_r[0]],  y=[cy_r[0]],  mode="markers", 
+                             marker=dict(size=9, color='orange'),
+                             name="Start", showlegend=False), 1, 2)
     
-    # image-style axes (top-left origin + square pixels)
-    combo.update_yaxes(autorange="reversed", scaleanchor="x",  scaleratio=1, row=1, col=1)
-    combo.update_yaxes(autorange="reversed", scaleanchor="x2", scaleratio=1, row=1, col=2)
-    combo.update_xaxes(constrain="domain", row=1, col=1)
-    combo.update_xaxes(constrain="domain", row=1, col=2)
-    
-    combo.update_layout(
-        height=520, width=1100,
-        title="Average Heatmaps — Left vs Right",
+    fig.add_trace(go.Scatter(x=[cx_r[-1]], y=[cy_r[-1]], mode="markers", 
+                             marker=dict(size=9, color='lime'),
+                             name="End", showlegend=False), 1, 2)
+
+    # Layout & axes
+    fig.update_layout(
+        template="plotly_white",
         margin=dict(l=10, r=10, t=50, b=10),
-        template="plotly_white"
+        coloraxis=dict(
+            colorscale=plotly_jet,
+            colorbar=dict(title="kPa", y=0.5, yanchor="middle")
+        ),
+        height=520,
+        legend=dict(
+        orientation="h",
+        x=0.5, y=-0.05,      # bottom center, below plot
+        xanchor="center",
+        yanchor="top"
     )
-            
-    return avg_left_fig, combo
+    )
 
+    # Top-left origin + square pixels for EACH subplot independently
+    fig.update_yaxes(autorange="reversed", scaleanchor="x",  scaleratio=1, row=1, col=1)
+    fig.update_yaxes(autorange="reversed", scaleanchor="x2", scaleratio=1, row=1, col=2)
+    fig.update_xaxes(constrain="domain", row=1, col=1)
+    fig.update_xaxes(constrain="domain", row=1, col=2)
 
-
-
-
+    return fig
 
 
 # Callback to get average step metrics
 @app.callback(
+    Output("averaging-complete-message", "children"),
     Output("avg-left-data", "data"),
     Output("avg-right-data", "data"),
+    Output("tabs", "value"),                 
     Input("compute-average-metrics", "n_clicks"),
     State("bbox-info-dict", "data"),
     State("shared-pass-table","data"),
     prevent_initial_call=True
 )
 def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
-
+    if not compute_avg_clicks:  # covers None or 0
+        raise dash.exceptions.PreventUpdate
+    
     # Setting up empty dictionaries to split up steps
     left_steps = {}
     right_steps = {}
@@ -793,6 +892,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
     
     avg_right = align_and_average_heatmaps_padded(right_steps, alignment_threshold_kPa=1, reference_index=0) 
     avg_left = align_and_average_heatmaps_padded(left_steps, alignment_threshold_kPa=1, reference_index=0)
+    print(f'AVG LEFT: {avg_left}') #DEBUG
     for out_R in [avg_right, avg_left]:
         # Plotting the masks and heatmaps to be sure everything looks good
         R_step_keys = out_R['step_keys']
@@ -839,48 +939,9 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         R_fig.tight_layout()
         plt.show()
         
-    return avg_left, avg_right
+    return "DONE", avg_left, avg_right, "tab-3"
         
-"""      
-    fig = go.Figure()
 
-    # Heatmap (origin='upper' -> reverse y-axis in Plotly)
-  
-    fig= px.imshow(
-         avg_hm,
-         color_continuous_scale = plotly_jet,                 
-         #zmin=np.nanmin(avg_hm),
-         #zmax=np.nanmax(avg_hm),
-         #colorbar=dict(title="Value"),
-         #hovertemplate="x=%{x}<br>y=%{y}<br>z=%{z}<extra></extra>"
-     )
-    
-    
-    # Avg CoP trajectory
-    fig.add_trace(
-        go.Scatter(
-            x=avg_cx,
-            y=avg_cy,
-            mode="lines",
-            line=dict(width=2),
-            name="Avg CoP"
-        )
-    )
-    
-    # (Optional) mark start/end of CoP
-    # fig.add_trace(go.Scatter(x=[avg_cx[0]], y=[avg_cy[0]], mode="markers", name="Start"))
-    # fig.add_trace(go.Scatter(x=[avg_cx[-1]], y=[avg_cy[-1]], mode="markers", name="End"))
-    
-    fig.update_layout(
-        title="Steps Average Heatmap",
-        #template="plotly_white",
-        #margin=dict(l=10, r=10, t=40, b=10),
-        #xaxis=dict(constrain="domain"),
-        #yaxis=dict(scaleanchor="x", scaleratio=1, autorange="reversed")  # keeps image coords + square pixels
-    )
-
-    return fig, fig
-"""
 # ---------- helpers ----------
 
 def make_active_mask(hm, alignment_threshold_kPa):
@@ -1314,166 +1375,7 @@ def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
     return pred_step_data, CoP_x, CoP_y, start_frame_pred, end_frame_pred    
 
 
-# Function to get the CoP for a step
-def get_CoP(step_data):
-    # step_data: (frames, height, width)
-    F, H, W = step_data.shape
-    
-    # pixel coordinate grids (row = y, col = x). By default: origin at top-left
-    yy, xx = np.indices((H, W))  # yy shape (H,W), xx shape (H,W)
-    
-    
-    # Sums over space for each frame
-    w_sum   = step_data.sum(axis=(1, 2))             # (F,)
-    x_wsum  = (step_data * xx).sum(axis=(1, 2))      # (F,)
-    y_wsum  = (step_data * yy).sum(axis=(1, 2))      # (F,)
-    
-    # Avoid divide-by-zero: where total pressure is 0, set COP to NaN
-    with np.errstate(invalid='ignore', divide='ignore'):
-        CoP_x = x_wsum / w_sum    # (F,)
-        CoP_y = y_wsum / w_sum    # (F,)
-    return CoP_x, CoP_y 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#####################
-##   TAB LAYOUTS   ##
-#####################
-tab1 = html.Div([
-        html.Div([
-            dcc.Graph(id="heatmap-frame", style={"height": "435px", "width": "990px", "marginBottom": "0px"}),
-            html.Div(html.Button("▶ Play", id="play-pause-btn", n_clicks=0), style={'textAlign': 'center'}),
-            dcc.Interval(id="frame-interval", interval=20, disabled=True),  # 20 ms per frame
-            dcc.Slider(
-                id="frame-slider",
-                min=0,
-                max=num_frames - 1,
-                value=0,
-                step=1,
-                marks=marks,
-                tooltip={"placement": "bottom", "always_visible": True},
-                updatemode='mouseup'
-            )], style={'flex': '2', 'paddingRight': '20px'}),
-
-        html.Div([
-            html.H4("Pass Selection Table", style={'textAlign': 'center'}),
-            dash_table.DataTable(
-                id='pass-table',
-                columns=[
-                    {"name": "Pass #", "id": "pass_idx", "type": "numeric", "editable": False},
-                    {"name": "Start Frame", "id": "start_frame", "type": "numeric", "editable": True},
-                    {"name": "End Frame", "id": "end_frame", "type": "numeric", "editable": True}
-                ],
-                data=[],
-                editable=True,
-                row_deletable=False,
-                style_table={'overflowX': 'auto'},
-                style_cell={'textAlign': 'center'}
-            ),
-            html.Div([html.Button("Add Pass", id="add-pass", n_clicks=0, style={'marginTop': '10px', 'marginRight': '10px'}),
-                      html.Button("Remove Pass", id="remove-pass", n_clicks=0)], style={'textAlign': 'center'}),
-                
-            html.Div([html.Button("Save and Process Passes", id="process-passes", n_clicks=0, style={'marginTop': '10px'}),
-                      dcc.Loading(id="loading-box", type="default", children=html.Div(id="processing-complete-message"), style={'marginTop': '70px'})] , style={'textAlign': 'center'})
-                     
-            ], style={'flex': '1'})
-    ], style={'display': 'flex', 'flexDirection': 'row'})
-
-
-
-
-tab2 = html.Div([
-    html.H4("Select a pass to view"),
-    
-
-    html.Div(id='passes-dropdown'), # Div to display dropdown
-    
-    html.Div([
-            html.Div(dcc.Graph(id="pass-max", 
-                               style={"height": "420px", "width": "940px", "marginBottom": "0px"},
-                               config={'editable': False, 'edits': {'shapePosition': True}}), 
-                               style={'flex': "0 0 30%", 'paddingRight': '0px'}),
-            html.Div([html.Div([
-                html.H4("Step Identification Table", style={'textAlign': 'center'}),
-                dash_table.DataTable(
-                        id="bbox-table",
-                        columns=[
-                            {"name": "Step #", "id": "step_idx", "editable": False},
-                            {"name": "Class", "id": "class", "presentation": "dropdown"},
-                            {"name": "x0", "id": "x0", "type": "numeric"},
-                            {"name": "y0", "id": "y0", "type": "numeric"},
-                            {"name": "x1", "id": "x1", "type": "numeric"},
-                            {"name": "y1", "id": "y1", "type": "numeric"},
-                        ],
-                        dropdown={
-                            "class": {
-                                "options": [{"label": class_labels[i], "value": i} for i in class_labels]
-                            }
-                        },
-                        row_selectable="single",
-                        editable=True,
-                        style_table={"overflowX": "auto"},
-                        style_cell={"textAlign": "center"},
-                    ),
-               
-                html.Button("Add Box", id="add-box", n_clicks=0, style={"marginTop": "10px", "marginRight": "10px"}),
-                html.Button("Remove Selected Box", id="remove-selected", n_clicks=0)
-            ], style={'textAlign': 'center', "marginBottom": "10px", 'flex': "0 0 70%"}),
-                
-                html.Div(html.Button("Analyze Selected Step", id="analyze-selected", n_clicks=0), style={"marginTop": "15px", 'textAlign': 'center'}),
-                html.Div(html.Button("Compute Average Metrics", id="compute-average-metrics", n_clicks=0), style={"marginTop": "15px", 'textAlign': 'center'}) # WIP
-                
-        
-    
-              ],style={'flex': '1'})
-        ], style={'display': 'flex', 'flexDirection': 'row',  
-                  "overflow": "hidden",
-                  "width": "100%"}),
-        html.Div([dcc.Graph(id="CPEI-output"), dcc.Graph(id="CPEI-output1")])
-
-])
-
-
-
-tab3 = html.Div([
-    html.H4("Heatmap and Mask Overlay"),
-    html.P("Heatmap with mask and controls would go here..."),
-    html.Div([dcc.Graph(id="avg-left-output"), dcc.Graph(id="avg-right-output")])
-])
-
-
-
-tab4 = html.Div([
-    html.H4("Select and Calculate Metrics"),
-    html.P("Split this up with sections for AI, CPEI, and FPA")
-])
-
-
-tab5 = html.Div([
-    html.H4("Preview and Generate report PDF"),
-    html.P("meow meow meow TBD")
-])
-
-    
 if __name__ == "__main__":
     app.run(debug=True)
    
