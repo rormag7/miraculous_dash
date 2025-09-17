@@ -32,34 +32,36 @@ plotly_jet = [
 
 
 
-# Sample Figure
-fig = go.Figure(
-    )
+# Sample data
+# Example average metrics (replace with your computed values)
+avg_metrics = {
+    "Left Foot": {
+        "Foot Length (cm)": '245.3 \u00B1 4',
+        "Foot Width (cm)": 12.7,
+        "Maximum Pressure (kPa)": 34.1,
+        "Average Pressure (kPa)": 34.1,
+        "Maximum Force (N)": 500,
+        "Step Duration (sec)": 245.3,
+        "CPEI (%)": 12.7,
+        "FPA (\u00b0)": 34.1,
+    },
+    "Right Foot": {
+        "Foot Length (cm)": '245.3 \u00B1 4',
+        "Foot Width (cm)": 12.7,
+        "Maximum Pressure (cm)": 34.1,
+        "Average Pressure (cm)": 34.1,
+        "Maximum Force (N)": 500,
+        "Step Duration (sec)": 245.3,
+        "CPEI (%)": 12.7,
+        "FPA (\u00b0)": 34.1,
+    }
+}
 
-# Add a scatter trace
-fig.add_trace(go.Scatter(
-    x=[1, 2, 3, 4],
-    y=[10, 11, 12, 13],
-    mode="lines+markers",
-    name="Line Plot"
-))
-
-# Add a bar trace
-fig.add_trace(go.Bar(
-    x=[1, 2, 3, 4],
-    y=[5, 6, 7, 8],
-    name="Bar Plot"
-))
-
-# Update layout
-fig.update_layout(
-    title="Line and Bar Example",
-    xaxis_title="X Axis",
-    yaxis_title="Y Axis",
-    legend_title="Legend",
-    template="plotly_white"
-)
-
+# Convert dict into rows for DataTable
+table_data = [
+    {"Foot": foot, **metrics}
+    for foot, metrics in avg_metrics.items()
+]
 
 
 
@@ -170,13 +172,42 @@ tab2 = html.Div([
                
                 html.Button("Add Box", id="add-box", n_clicks=0, style={"marginTop": "10px", "marginRight": "10px"}),
                 html.Button("Remove Selected Box", id="remove-selected", n_clicks=0)
-            ], style={'textAlign': 'center', "marginBottom": "10px", 'flex': "0 0 70%"}),
+            ], style={'textAlign': 'center', "marginBottom": "5px", 'flex': "0 0 70%"}),
                 
-                html.Div(html.Button("Analyze Selected Step", id="analyze-selected", n_clicks=0), style={"marginTop": "15px", 'textAlign': 'center'}),
+               
+        
+                html.Div(
+                    [
+                        html.Div([
+                            html.Button("Analyze Selected Step", id="analyze-selected", n_clicks=0,
+                                        style={"marginTop": "5px"}),
+                            dcc.Loading(
+                                id="loading-analyze",
+                                type="default",
+                                children=html.Div(id="analyze-complete-message"),
+                                style={"marginTop": "50px"}
+                            ),
+                        ], style={"marginRight": "5px"}), 
                 
-                html.Div([html.Button("Compute Average Metrics", id="compute-average-metrics", n_clicks=0, style={"marginTop": "15px", 'textAlign': 'center'}),
-                          dcc.Loading(id="loading-box", type="default", children=html.Div(id="averaging-complete-message"), style={'marginTop': '70px'})] , style={"marginBottom": "50px",'textAlign': 'center'}),  # WIP 
-                
+                        html.Div([
+                            html.Button("Compute Average Metrics", id="compute-average-metrics", n_clicks=0,
+                                        style={"marginTop": "5px"}),
+                            dcc.Loading(
+                                id="loading-compute",
+                                type="default",
+                                children=html.Div(id="averaging-complete-message"),
+                                style={"marginTop": "50px"}
+                            ),
+                        ]),
+                    ],
+                    style={
+                        "display": "flex",
+                        "justifyContent": "center",
+                        "alignItems": "flex-start",  # keep tops aligned
+                        "marginBottom": "50px",
+                        "gap": "5px",               # space between the two blocks
+                    },
+                )
         
     
               ],style={'flex': '1'})
@@ -188,9 +219,38 @@ tab2 = html.Div([
 ])
 
 
-
+tab5 = html.H4("Single Step View")
+                  
 tab3 = html.Div([
-    html.Div(dcc.Graph(id="avg-steps-combined", style={"height": 520, "width": "100%"}))
+    html.Div(dcc.Graph(id="avg-steps-combined", style={"height": 520, "width": "100%"})),
+    html.Div(dcc.Graph(id="avg-pressure-magnitude-combined", style={"height": 520, "width": "100%"})),
+    html.Div(
+    [
+        html.H4("Average Metrics Table", style={"textAlign": "center"}),
+
+        html.Div(
+            dash_table.DataTable(
+                id="avg-metrics-table",
+                columns=[{"name": col, "id": col} for col in table_data[0].keys()],
+                data=table_data,
+                style_table={"width": "50%"},
+                style_cell={"textAlign": "center"},
+                style_header={"fontWeight": "bold"},
+                style_data_conditional=[
+                    {   # Bold + gray background for first column
+                        "if": {"column_id": "Foot"},
+                        "fontWeight": "bold",
+                        "backgroundColor": "#f2f2f2",
+                    }
+                ],
+            ),
+            style={"display": "flex", "justifyContent": "center"},
+        ),
+    ]
+),
+             
+              
+    html.H4("Average foot width +- std\nAverage foot width +- std\nAverage max pressure +- std")
 ])
 
 
@@ -224,6 +284,7 @@ app.layout = html.Div([
         children=[
             dcc.Tab(label="Pass Selection", value="tab-1"),
             dcc.Tab(label="Step Identification", value="tab-2"),
+            dcc.Tab(label="Single Step Analysis", value="tab-5", children=tab5),
             dcc.Tab(label="Average Step Metrics", value="tab-3", children=tab3),
             dcc.Tab(label="Report Generation", value="tab-4")
             
@@ -349,6 +410,10 @@ def update_pass_table(add_clicks, remove_clicks, table_data):
     prevent_initial_call=True
 )
 def process_passes(process_clicks, table_data):
+    # Only run on a real click of the button
+    if not process_clicks or ctx.triggered_id != "process-passes":
+        raise dash.exceptions.PreventUpdate
+    
     trial_dir = trial_name
     trial_info_path = f'{trial_dir}/trial_information.csv'
     trial_fieldnames=['pass_idx', 'start_frame', 'end_frame']
@@ -737,7 +802,6 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
     # Slicing the pass frame to get only frames where the step is happening
     pred_step_frames = all_step_frames[start_frame_pred:end_frame_pred]
     total_pressure_per_step_frame = total_pressure_per_pass_frame[start_frame_pred:end_frame_pred]
-    
     return pred_step_frames, total_pressure_per_step_frame
  
    
@@ -748,6 +812,7 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 #####################
 @app.callback(
     Output("avg-steps-combined", "figure"),
+    Output("avg-pressure-magnitude-combined", "figure"),
     Input("tabs", "value"),
     Input("avg-left-data", "data"),
     Input("avg-right-data", "data"),
@@ -777,7 +842,7 @@ def create_avg_figs(tab, left_data, right_data):
 
     fig = make_subplots(
         rows=1, cols=2, horizontal_spacing=0.08,
-        subplot_titles=("Average Left", "Average Right")
+        subplot_titles=("Averaged Maximum Left Step", "Averaged Maximum Right Step")
     )
 
     # Heatmaps (shared coloraxis → single colorbar)
@@ -831,8 +896,98 @@ def create_avg_figs(tab, left_data, right_data):
     fig.update_yaxes(autorange="reversed", scaleanchor="x2", scaleratio=1, row=1, col=2)
     fig.update_xaxes(constrain="domain", row=1, col=1)
     fig.update_xaxes(constrain="domain", row=1, col=2)
+    
+    
+    
+    left_avg_mag = np.array(left_data['avg_magnitude_curve'])
+    left_std_mag = np.array(left_data['std_magnitude_curve'])
+    
+    right_avg_mag = np.array(right_data['avg_magnitude_curve'])
+    right_std_mag = np.array(right_data['std_magnitude_curve'])
+    
+    # Example data
+    mag_x = np.linspace(0, 100, len(left_avg_mag))  # step cycle percentage
+    
+    
+    mag_fig = go.Figure()
+    
+    # Standard deviation band (shaded area)
+    
 
-    return fig
+    
+    # Average curve
+    mag_fig.add_trace(
+        go.Scatter(
+            x=mag_x,
+            y=left_avg_mag,
+            mode="lines",
+            line=dict(color="blue", width=2),
+            name="Left Average"
+        )
+    )
+    
+    mag_fig.add_trace(
+        go.Scatter(
+            x=np.concatenate([mag_x, mag_x[::-1]]), 
+            y=np.concatenate([left_avg_mag - left_std_mag, (left_avg_mag + left_std_mag)[::-1]]),
+            fill="toself",
+            fillcolor="rgba(0, 100, 255, 0.1)",
+            line=dict(color="rgba(255,255,255,0)"),  # hide line
+            hoverinfo="skip",
+            showlegend=True,
+            name="±1 Left Std Dev"
+        )
+    )
+    
+    
+    
+    # Average curve
+    mag_fig.add_trace(
+        go.Scatter(
+            x=mag_x,
+            y=right_avg_mag,
+            mode="lines",
+            line=dict(color="red", width=2),
+            name="Right Average"
+        )
+    )
+    
+    mag_fig.add_trace(
+        go.Scatter(
+            x=np.concatenate([mag_x, mag_x[::-1]]), 
+            y=np.concatenate([right_avg_mag - right_std_mag, (right_avg_mag + right_std_mag)[::-1]]),
+            fill="toself",
+            fillcolor="rgba(255, 0, 0, 0.1)",
+            line=dict(color="rgba(255,255,255,0)"),  # hide line
+            hoverinfo="skip",
+            showlegend=True,
+            name="±1 Right Std Dev"
+        )
+    )
+    
+    
+    # Layout
+    mag_fig.update_layout(
+        title=dict(
+        text="Average Step Pressure Profile",
+        x=0.5,              # 0 = left, 0.5 = center, 1 = right
+        y=0.95,             # vertical placement (1.0 is top, <1 moves it down)
+        xanchor="center",   # anchor relative to x
+        yanchor="top" ),      # anchor relative to y
+        xaxis_title="Step cycle (%)",
+        yaxis_title="Pressure magnitude",
+        template="plotly_white",
+        legend=dict(
+        orientation="h",
+        x=0.5, y=-0.2,      # bottom center, below plot
+        xanchor="center",
+        yanchor="bottom"
+        ) 
+    )
+ 
+        
+    
+    return fig, mag_fig
 
 
 # Callback to get average step metrics
@@ -873,26 +1028,35 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             plt.show()
     
             box['rc_step_max'], box['rc_CoP_x'], box['rc_CoP_y'], trisect_1, trisect_2 = plot_pc1_aligned(box['original_step_frames'][:].max(0), box['CoP_x'], box['CoP_y'], rot_crop_threshold_kPa=0)
-            
+
+        
             plt.imshow(box['rc_step_max'], cmap = jet_cmap)     
             plt.plot(box['rc_CoP_x'], box['rc_CoP_y'])
             plt.title("Rotated and Cropped Step")
             plt.show()
             
+            #Plotting the total pressure magnitude per step frames
+            step_frame_pressure_magnitude = box['original_step_frames'][:].sum(axis=(1, 2))
+            plt.plot(range(len(step_frame_pressure_magnitude)), step_frame_pressure_magnitude)
+            plt.title('Pressure Magnitude (kPa per frame)')
+            plt.show()
+            
             # If left step
             if box['class'] == 1:
-                left_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y']}
+                left_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'step_frame_pressure_magnitude':step_frame_pressure_magnitude}
             # If right step
             elif box['class'] == 2:
-                right_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y']}
+                right_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'step_frame_pressure_magnitude':step_frame_pressure_magnitude}
             # If incomplete step, do nothing
             else:
                 pass 
-          
+    
     
     avg_right = align_and_average_heatmaps_padded(right_steps, alignment_threshold_kPa=1, reference_index=0) 
     avg_left = align_and_average_heatmaps_padded(left_steps, alignment_threshold_kPa=1, reference_index=0)
-    print(f'AVG LEFT: {avg_left}') #DEBUG
+    
+
+    
     for out_R in [avg_right, avg_left]:
         # Plotting the masks and heatmaps to be sure everything looks good
         R_step_keys = out_R['step_keys']
@@ -939,10 +1103,27 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         R_fig.tight_layout()
         plt.show()
         
+        # Plotting the average magnitude of pressure throughout the duration of the step
+        y_upper = out_R['avg_magnitude_curve'] + out_R['std_magnitude_curve']
+        y_lower = out_R['avg_magnitude_curve'] - out_R['std_magnitude_curve']
+        plt.plot(range(len(out_R['avg_magnitude_curve'])), out_R['avg_magnitude_curve'])
+        plt.fill_between(range(len(out_R['avg_magnitude_curve'])), y_lower, y_upper, color='lightblue', alpha=0.5, label='Standard Deviation')
+        plt.title("Average Pressure Magnitude ")
+        plt.show()
+        
     return "DONE", avg_left, avg_right, "tab-3"
         
 
 # ---------- helpers ----------
+
+# Function to resample the pressure magnitude of each step for averaging
+def resample_pressure_magnitudes(arr, n_points=100):
+    """Resample 1D array to fixed length using linear interpolation"""
+    x_old = np.linspace(0, 1, len(arr))
+    x_new = np.linspace(0, 1, n_points)
+    return np.interp(x_new, x_old, arr)
+
+
 
 def make_active_mask(hm, alignment_threshold_kPa):
     """Boolean mask of 'active' cells using an absolute kPa threshold. NaNs never active."""
@@ -1052,6 +1233,8 @@ def align_and_average_heatmaps_padded(
         {'step_i': {'rc_step_max': 2D float array,
                     'rc_CoP_x':  1D float array (columns),
                     'rc_CoP_y':  1D float array (rows)}},
+                    'step_frame_pressure_magnitude': 1D float array
+        
                     lots of other info that won't be used...
         'rc' indicates that the data has been rotated vertically and cropped
     alignment_threshold_kPa : float
@@ -1076,6 +1259,8 @@ def align_and_average_heatmaps_padded(
       'padded_cop':        list[{'x': 1D, 'y': 1D}],
       'aligned_cop':       list[{'x': 1D, 'y': 1D}],
       'avg_cop':           {'x': 1D length=avg_cop_points, 'y': 1D length=avg_cop_points}
+      'avg_magnitude_curve': avg_magnitude_curve, # avg pressure magnitude throughout step duration
+      'std_magnitude_curve': std_magnitude_curve
     }
     """
     # Preserve insertion order of the dict
@@ -1161,6 +1346,20 @@ def align_and_average_heatmaps_padded(
     avg_cop_x = np.nanmean(resampled_x, axis=0)
     avg_cop_y = np.nanmean(resampled_y, axis=0)
 
+
+    # Resampling and averaging magnitudes of each step throughout the duration of the step
+    # Resample each step to the same length
+    resampled_pressure_magnitudes = [resample_pressure_magnitudes(val["step_frame_pressure_magnitude"], n_points=100)
+                 for val in side_steps_dict.values()]
+    
+    resampled_pressure_magnitudes = np.vstack(resampled_pressure_magnitudes)
+    
+    # Compute mean and std across steps
+    avg_magnitude_curve = np.mean(resampled_pressure_magnitudes, axis=0)
+    std_magnitude_curve = np.std(resampled_pressure_magnitudes, axis=0)
+    
+    
+    
     return {
         'padded_heatmaps':  padded_heatmaps,
         'padded_masks':     padded_masks,
@@ -1174,7 +1373,9 @@ def align_and_average_heatmaps_padded(
         'aligned_cop':      aligned_cop,       # list of per-step traces in aligned canvas
         'avg_cop':          {'x': avg_cop_x, 'y': avg_cop_y, 'n_points': avg_cop_points},
         'target_shape':     target_shape,      # handy to keep around
-        'step_keys':        step_keys          # maps list indices back to your dict keys
+        'step_keys':        step_keys,          # maps list indices back to your dict keys
+        'avg_magnitude_curve': avg_magnitude_curve, # avg pressure magnitude throughout step duration
+        'std_magnitude_curve': std_magnitude_curve  # std ...
     }
 
 # Function to rotate heatmap, crop it to activated frames and CoP and retreive trisections
@@ -1265,8 +1466,6 @@ def plot_pc1_aligned(step_data, CoP_x, CoP_y, rot_crop_threshold_kPa):
         reshape=True)
         heatmap_new = np.rot90(heatmap_new, k=1)
     
-    
-
 
     # Get the trisections
     cropped_H = heatmap_new.shape[0]
