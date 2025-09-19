@@ -71,13 +71,13 @@ class_labels = {0:'Incomplete',
                 2:'Right'}
 
 class_colors = {0:'grey',
-                1:'red',
-                2:'royalblue'}
+                1:'royalblue',
+                2:'red'}
 
 app = dash.Dash(__name__)
 
 # Load .npz file with hardcoded filename, this will eventually get replaced
-trial_file = "S145_W1.npz" #S145_W1.npz"
+trial_file = "S133_W1.npz" #S145_W1.npz"
 trial_name, ext = os.path.splitext(trial_file)
 data = np.load(trial_file)
 trial_frames = data['arr_0'][0:2000] # WILL NEED TO REMOVE [0:2000] LATER BUT WILL HELP TO SPEED UP DEVELOPMENT
@@ -468,8 +468,8 @@ def process_passes(process_clicks, table_data):
                 class_id = int(box.cls[0])
                 confidence = float(box.conf[0])
                 xyxy = box.xyxy[0].tolist()  # [x1, y1, x2, y2]
-
-                pred = {"class": class_id, "confidence": confidence, "x0": xyxy[0], "y0": xyxy[1], "x1":xyxy[2], "y1": xyxy[3],
+                pred_pad = 3 # padded 3 to predictions to be sure nothing gets cut off
+                pred = {"class": class_id, "confidence": confidence, "x0": xyxy[0]-pred_pad, "y0": xyxy[1]-pred_pad, "x1":xyxy[2]+pred_pad, "y1": xyxy[3]+pred_pad,
                         "type": "rect", "fillcolor": "rgba(0,0,0,0)", "editable": True, "line": {"color": class_colors[class_id], "width": 3}}
                 predictions.append(pred)
                 
@@ -1036,9 +1036,10 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             plt.show()
             
             #Plotting the total pressure magnitude per step frames
-            step_frame_pressure_magnitude = box['original_step_frames'][:].sum(axis=(1, 2))
+            # Each sensor is .000025m^2 and the original pressure is in kPa, so multiplying out to get force: F = P*A
+            step_frame_pressure_magnitude = ((1000*.000025)*box['original_step_frames'][:]).sum(axis=(1, 2))
             plt.plot(range(len(step_frame_pressure_magnitude)), step_frame_pressure_magnitude)
-            plt.title('Pressure Magnitude (kPa per frame)')
+            plt.title('Force Magnitude (N per frame)')
             plt.show()
             
             # If left step
