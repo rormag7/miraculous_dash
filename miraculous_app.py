@@ -30,6 +30,7 @@ plotly_jet = [
     [i / 255, f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {a})']
     for i, (r, g, b, a) in enumerate(jet)]
 
+"""
 # Setting up table for average metrics
 avg_metrics_table_data_setup = {
     "Left Foot": {
@@ -97,7 +98,7 @@ table_data = [
     {"Foot": foot, **metrics}
     for foot, metrics in avg_metrics.items()
 ]
-
+"""
 
 
 # Class labels and colors for plotting bboxes
@@ -112,10 +113,12 @@ class_colors = {0:'grey',
 app = dash.Dash(__name__)
 
 # Load .npz file with hardcoded filename, this will eventually get replaced
-trial_file = "S133_W1.npz" #S145_W1.npz"
+trial_file = "S145_W1.npz" #S145_W1.npz"
 trial_name, ext = os.path.splitext(trial_file)
 data = np.load(trial_file)
 trial_frames = data['arr_0'][0:2000] # WILL NEED TO REMOVE [0:2000] LATER BUT WILL HELP TO SPEED UP DEVELOPMENT
+sample_rate = 100 #Hz
+tile_size = 0.5 # cm 
 
 trial_frames = np.rot90(trial_frames, k=1, axes=(1, 2))
 num_frames = trial_frames.shape[0]
@@ -266,7 +269,7 @@ tab3 = html.Div([
         html.Div(
             dash_table.DataTable(
                 id="avg-metrics-table",
-                columns=avg_metrics_columns,
+                columns=[],
                 data=[],
                 style_table={"width": "50%"},
                 style_cell={"textAlign": "center"},
@@ -284,15 +287,13 @@ tab3 = html.Div([
     ]
 ),
              
-              
-    html.H4("Average foot width +- std\nAverage foot width +- std\nAverage max pressure +- std")
 ])
 
 
 
 tab4 = html.Div([
     html.H4("Preview and Generate report PDF"),
-    html.P("meow meow meow TBD")
+    html.P("Add section where operator can add notes!!!")
 ])
 
 
@@ -1035,6 +1036,7 @@ def create_avg_figs(tab, left_data, right_data):
     Output("avg-left-data", "data"),
     Output("avg-right-data", "data"),
     Output("avg-metrics-table", "data"),
+    Output("avg-metrics-table", "columns"),
     Output("tabs", "value"),                 
     Input("compute-average-metrics", "n_clicks"),
     State("bbox-info-dict", "data"),
@@ -1154,41 +1156,96 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
     #"Foot Length (cm)": '245.3 \u00B1 4',
     # Getting data for average metrics table
 
-    avg_step_frame_count = []
-    std_step_frame_count = []
-    avg_step_max_force = []
+    avg_step_duration = [] # In seconds
+    std_step_duration = []
+    avg_step_max_force = [] # In newtons
     std_step_max_force = []
+    avg_CoP_distance = [] # In cm, each tile is .5 x .5 cm
+    std_CoP_distance = []
+    avg_contact_area = [] # In cm^2, each tile is .5 x .5 cm
+    std_contact_area = []
+    
     
     for side_steps in [left_steps, right_steps]:
-        step_frame_counts = []
+        step_durations = [] 
         step_max_force = []
+        CoP_distances = []
         for step_key in side_steps:
             # Getting the number of frames in each step
-            step_frame_counts.append(len(side_steps[step_key]['step_frame_pressure_magnitude']))
-            step_max_force.append(side_steps[step_key]['step_frame_pressure_magnitude'].max)
+            step_durations.append(len(side_steps[step_key]['step_frame_pressure_magnitude'])/100) # frame count / sample rate = time in seconds
             # Getting the max pressure in each step
+            step_max_force.append(max(side_steps[step_key]['step_frame_pressure_magnitude']))
+            # Getting the distance of the CoP trajectory
+            x = side_steps[step_key]['rc_CoP_x']
+            y = side_steps[step_key]['rc_CoP_y']
+            CoP_distances.append(np.linalg.norm(np.diff(np.c_[x, y], axis=0), axis=1).sum()*tile_size)
         
         # Getting average and standard deviation over all steps for the left or right side
-        avg_step_frame_count.append(np.mean(np.array(step_frame_counts)))
-        std_step_frame_count.append(np.std(np.array(step_frame_counts)))
+        avg_step_duration.append(np.mean(np.array(step_durations)))
+        std_step_duration.append(np.std(np.array(step_durations)))
         
         avg_step_max_force.append(np.mean(np.array(step_max_force)))
         std_step_max_force.append(np.std(np.array(step_max_force)))
         
-        
-        print('step frame counts')
-        print(step_frame_counts)
-    print('L and R avgs and stds frame counts')
-    print(avg_step_frame_count)
-    print(std_step_frame_count)
+        avg_CoP_distance.append(np.mean(np.array(CoP_distances)))
+        std_CoP_distance.append(np.std(np.array(CoP_distances)))
     
-    print('L and R avgs and stds max force')
-    print(avg_step_max_force)
-    print(std_step_max_force)
-            
-            
+    # Pulling more info from the align_and_average_heatmaps_padded outputs to get step geometry
+    for step_masks in [avg_right, avg_left]:
+        contact_areas = []
+        step_lengths = []
+        step_widths = []
         
-    return "DONE", avg_left, avg_right, rows, "tab-3"
+        # Going through each individual step mask and summing all true tiles to get area
+        padded_masks = step_masks['padded_masks']
+        for padded_mask in padded_masks:
+            contact_areas.append(np.sum(padded_mask)*tile_size**2)
+        
+        avg_contact_area.append(np.mean(np.array(contact_areas)))
+        std_contact_area.append(np.std(np.array(contact_areas)))
+        
+            
+     # saving the metrics
+    left_metrics = {
+        "Step Duration (sec)": f'{avg_step_duration[0]:.2f}  \u00B1 {std_step_duration[0]:.2f}',
+        "Contact Area (cm\u00b2)": f'{avg_contact_area[0]:.1f} \u00B1 {std_contact_area[0]:.1f}',
+        "Foot Length (cm)": 7,
+        "Foot Width (cm)": 12.7,
+        "Peak Pressure (kPa)": '',
+        "Average Pressure (kPa)": '',
+        "Maximum Force (N)": f'{avg_step_max_force[0]:.0f}  \u00B1 {std_step_max_force[0]:.0f}',
+        "CoP Distance (cm)": f'{avg_CoP_distance[0]:.1f} \u00B1 {std_CoP_distance[0]:.1f}',
+        "CoP Diplacement (cm)": f'\u00B1',
+        "Walking Arch Index (%)": '',
+        "CPEI (%)": '',
+        "FPA (\u00b0)": '',
+    }
+    
+    right_metrics = {
+        "Step Duration (sec)": f'{avg_step_duration[1]:.2f}  \u00B1 {std_step_duration[1]:.2f}',
+        "Contact Area (cm\u00b2)": f'{avg_contact_area[1]:.1f} \u00B1 {std_contact_area[1]:.1f}',
+        "Foot Length (cm)": 7,
+        "Foot Width (cm)": 12.7,
+        "Peak Pressure (kPa)": '',
+        "Average Pressure (kPa)": '',
+        "Maximum Force (N)": f'{avg_step_max_force[1]:.0f}  \u00B1 {std_step_max_force[1]:.0f}',
+        "CoP Distance (cm)": f'{avg_CoP_distance[1]:.1f} \u00B1 {std_CoP_distance[1]:.1f}',
+        "CoP Diplacement (cm)": f'\u00B1',
+        "Walking Arch Index (%)": '',
+        "CPEI (%)": '',
+        "FPA (\u00b0)": '',
+    }
+    # =====================================================
+    
+    # Build table rows
+    rows = []
+    rows.append({"Foot": "Left Foot",  **left_metrics})
+    rows.append({"Foot": "Right Foot", **right_metrics})
+    
+    # Build columns dynamically (order taken from first row’s keys)
+    columns = [{"name": key, "id": key} for key in rows[0].keys()]       
+        
+    return "DONE", avg_left, avg_right, rows, columns, "tab-3"
         
 
 
