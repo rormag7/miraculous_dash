@@ -30,6 +30,41 @@ plotly_jet = [
     [i / 255, f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {a})']
     for i, (r, g, b, a) in enumerate(jet)]
 
+# Setting up table for average metrics
+avg_metrics_table_data_setup = {
+    "Left Foot": {
+        "Foot Length (cm)": '7',
+        "Foot Width (cm)": '',
+        "Maximum Pressure (kPa)": '',
+        "Average Pressure (kPa)": '',
+        "Maximum Force (N)": '',
+        "Step Duration (sec)": '',
+        "CPEI (%)": '',
+        "FPA (\u00b0)": '',
+    },
+    "Right Foot": {
+        "Foot Length (cm)": '7',
+        "Foot Width (cm)": '',
+        "Maximum Pressure (kPa)": '',
+        "Average Pressure (kPa)": '',
+        "Maximum Force (N)": '',
+        "Step Duration (sec)": '',
+        "CPEI (%)": '',
+        "FPA (\u00b0)": '',
+    }
+}
+
+# Convert nested dict → list of dicts (rows)
+rows = []
+for foot, metrics in avg_metrics_table_data_setup.items():
+    row = {"Foot": foot}
+    row.update(metrics)
+    rows.append(row)
+
+avg_metrics_columns = [{"name": col, "id": col} for col in rows[0].keys()]
+
+
+
 
 
 # Sample data
@@ -231,8 +266,8 @@ tab3 = html.Div([
         html.Div(
             dash_table.DataTable(
                 id="avg-metrics-table",
-                columns=[{"name": col, "id": col} for col in table_data[0].keys()],
-                data=table_data,
+                columns=avg_metrics_columns,
+                data=[],
                 style_table={"width": "50%"},
                 style_cell={"textAlign": "center"},
                 style_header={"fontWeight": "bold"},
@@ -810,6 +845,10 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 #####################
 ## TAB 3 CALLBACKS ##
 #####################
+# Callback to add average metrics to table
+
+
+# Callback to display average step heatmaps and average table data
 @app.callback(
     Output("avg-steps-combined", "figure"),
     Output("avg-pressure-magnitude-combined", "figure"),
@@ -990,11 +1029,12 @@ def create_avg_figs(tab, left_data, right_data):
     return fig, mag_fig
 
 
-# Callback to get average step metrics
+# Callback to get average step metrics and add metrics to average metrics table
 @app.callback(
     Output("averaging-complete-message", "children"),
     Output("avg-left-data", "data"),
     Output("avg-right-data", "data"),
+    Output("avg-metrics-table", "data"),
     Output("tabs", "value"),                 
     Input("compute-average-metrics", "n_clicks"),
     State("bbox-info-dict", "data"),
@@ -1051,7 +1091,6 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             # If incomplete step, do nothing
             else:
                 pass 
-    
     
     avg_right = align_and_average_heatmaps_padded(right_steps, alignment_threshold_kPa=1, reference_index=0) 
     avg_left = align_and_average_heatmaps_padded(left_steps, alignment_threshold_kPa=1, reference_index=0)
@@ -1112,8 +1151,50 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         plt.title("Average Pressure Magnitude ")
         plt.show()
         
-    return "DONE", avg_left, avg_right, "tab-3"
+    #"Foot Length (cm)": '245.3 \u00B1 4',
+    # Getting data for average metrics table
+
+    avg_step_frame_count = []
+    std_step_frame_count = []
+    avg_step_max_force = []
+    std_step_max_force = []
+    
+    for side_steps in [left_steps, right_steps]:
+        step_frame_counts = []
+        step_max_force = []
+        for step_key in side_steps:
+            # Getting the number of frames in each step
+            step_frame_counts.append(len(side_steps[step_key]['step_frame_pressure_magnitude']))
+            step_max_force.append(side_steps[step_key]['step_frame_pressure_magnitude'].max)
+            # Getting the max pressure in each step
         
+        # Getting average and standard deviation over all steps for the left or right side
+        avg_step_frame_count.append(np.mean(np.array(step_frame_counts)))
+        std_step_frame_count.append(np.std(np.array(step_frame_counts)))
+        
+        avg_step_max_force.append(np.mean(np.array(step_max_force)))
+        std_step_max_force.append(np.std(np.array(step_max_force)))
+        
+        
+        print('step frame counts')
+        print(step_frame_counts)
+    print('L and R avgs and stds frame counts')
+    print(avg_step_frame_count)
+    print(std_step_frame_count)
+    
+    print('L and R avgs and stds max force')
+    print(avg_step_max_force)
+    print(std_step_max_force)
+            
+            
+        
+    return "DONE", avg_left, avg_right, rows, "tab-3"
+        
+
+
+
+
+
 
 # ---------- helpers ----------
 
