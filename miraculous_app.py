@@ -124,6 +124,7 @@ tab1 = html.Div([
                             style={"width": "150px"}
                         )
                     ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
+              
               html.Label("Date of Birth (YYYY-MM-DD): "),
               dcc.Input(id="birth-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
 
@@ -133,8 +134,10 @@ tab1 = html.Div([
 
             html.Br(),
             html.Label("Notes: "),
-            dcc.Input(id="notes", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
-
+            dcc.Input(id="notes", type="text", placeholder="", style={'marginTop': '10px', 'width': '250px'}),
+            
+            html.Br(),
+            html.Button("Save Patient Information", id="save-patient-info", n_clicks=0, style={"marginTop": "20px"})
 
              ])
     ])
