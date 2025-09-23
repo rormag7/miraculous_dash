@@ -30,75 +30,6 @@ plotly_jet = [
     [i / 255, f'rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, {a})']
     for i, (r, g, b, a) in enumerate(jet)]
 
-"""
-# Setting up table for average metrics
-avg_metrics_table_data_setup = {
-    "Left Foot": {
-        "Foot Length (cm)": '7',
-        "Foot Width (cm)": '',
-        "Maximum Pressure (kPa)": '',
-        "Average Pressure (kPa)": '',
-        "Maximum Force (N)": '',
-        "Step Duration (sec)": '',
-        "CPEI (%)": '',
-        "FPA (\u00b0)": '',
-    },
-    "Right Foot": {
-        "Foot Length (cm)": '7',
-        "Foot Width (cm)": '',
-        "Maximum Pressure (kPa)": '',
-        "Average Pressure (kPa)": '',
-        "Maximum Force (N)": '',
-        "Step Duration (sec)": '',
-        "CPEI (%)": '',
-        "FPA (\u00b0)": '',
-    }
-}
-
-# Convert nested dict → list of dicts (rows)
-rows = []
-for foot, metrics in avg_metrics_table_data_setup.items():
-    row = {"Foot": foot}
-    row.update(metrics)
-    rows.append(row)
-
-avg_metrics_columns = [{"name": col, "id": col} for col in rows[0].keys()]
-
-
-
-
-
-# Sample data
-# Example average metrics (replace with your computed values)
-avg_metrics = {
-    "Left Foot": {
-        "Foot Length (cm)": '245.3 \u00B1 4',
-        "Foot Width (cm)": 12.7,
-        "Maximum Pressure (kPa)": 34.1,
-        "Average Pressure (kPa)": 34.1,
-        "Maximum Force (N)": 500,
-        "Step Duration (sec)": 245.3,
-        "CPEI (%)": 12.7,
-        "FPA (\u00b0)": 34.1,
-    },
-    "Right Foot": {
-        "Foot Length (cm)": '245.3 \u00B1 4',
-        "Foot Width (cm)": 12.7,
-        "Maximum Pressure (cm)": 34.1,
-        "Average Pressure (cm)": 34.1,
-        "Maximum Force (N)": 500,
-        "Step Duration (sec)": 245.3,
-        "CPEI (%)": 12.7,
-        "FPA (\u00b0)": 34.1,
-    }
-}
-
-# Convert dict into rows for DataTable
-table_data = [
-    {"Foot": foot, **metrics}
-    for foot, metrics in avg_metrics.items()
-]
-"""
 
 
 # Class labels and colors for plotting bboxes
@@ -321,7 +252,7 @@ app.layout = html.Div([
             dcc.Tab(label="Pass Selection", value="tab-1"),
             dcc.Tab(label="Step Identification", value="tab-2"),
             dcc.Tab(label="Single Step Analysis", value="tab-5", children=tab5),
-            dcc.Tab(label="Average Step Metrics", value="tab-3", children=tab3),
+            dcc.Tab(label="Average Step Analysis", value="tab-3", children=tab3),
             dcc.Tab(label="Report Generation", value="tab-4")
             
         ]
@@ -1009,17 +940,17 @@ def create_avg_figs(tab, left_data, right_data):
     # Layout
     mag_fig.update_layout(
         title=dict(
-        text="Average Step Pressure Profile",
+        text="Average Step Force Profile",
         x=0.5,              # 0 = left, 0.5 = center, 1 = right
         y=0.95,             # vertical placement (1.0 is top, <1 moves it down)
         xanchor="center",   # anchor relative to x
         yanchor="top" ),      # anchor relative to y
         xaxis_title="Step cycle (%)",
-        yaxis_title="Pressure magnitude",
+        yaxis_title="Force (N)",
         template="plotly_white",
         legend=dict(
         orientation="h",
-        x=0.5, y=-0.2,      # bottom center, below plot
+        x=0.5, y=-0.25,      # bottom center, below plot
         xanchor="center",
         yanchor="bottom"
         ) 
@@ -1069,27 +1000,29 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             plt.title("Original Step")
             plt.show()
     
-            box['rc_step_max'], box['rc_CoP_x'], box['rc_CoP_y'], trisect_1, trisect_2 = plot_pc1_aligned(box['original_step_frames'][:].max(0), box['CoP_x'], box['CoP_y'], rot_crop_threshold_kPa=0)
+            box['rc_step_max'], box['rc_CoP_x'], box['rc_CoP_y'], box['trisect_1'], box['trisect_2'] = plot_pc1_aligned(box['original_step_frames'][:].max(0), box['CoP_x'], box['CoP_y'], rot_crop_threshold_kPa=0)
 
         
-            plt.imshow(box['rc_step_max'], cmap = jet_cmap)     
+            plt.imshow(box['rc_step_max'], cmap = jet_cmap)
+            plt.hlines(box['trisect_1'], 0, box['rc_step_max'].shape[1]-1)
+            plt.hlines(box['trisect_2'], 0, box['rc_step_max'].shape[1]-1)
             plt.plot(box['rc_CoP_x'], box['rc_CoP_y'])
             plt.title("Rotated and Cropped Step")
             plt.show()
             
             #Plotting the total pressure magnitude per step frames
             # Each sensor is .000025m^2 and the original pressure is in kPa, so multiplying out to get force: F = P*A
-            step_frame_pressure_magnitude = ((1000*.000025)*box['original_step_frames'][:]).sum(axis=(1, 2))
-            plt.plot(range(len(step_frame_pressure_magnitude)), step_frame_pressure_magnitude)
+            step_frame_force_magnitude = ((1000*.000025)*box['original_step_frames'][:]).sum(axis=(1, 2))
+            plt.plot(range(len(step_frame_force_magnitude)), step_frame_force_magnitude)
             plt.title('Force Magnitude (N per frame)')
             plt.show()
             
             # If left step
             if box['class'] == 1:
-                left_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'step_frame_pressure_magnitude':step_frame_pressure_magnitude}
+                left_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'trisect_1':box['trisect_1'], 'trisect_2':box['trisect_2'], 'step_frame_force_magnitude':step_frame_force_magnitude}
             # If right step
             elif box['class'] == 2:
-                right_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'step_frame_pressure_magnitude':step_frame_pressure_magnitude}
+                right_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'trisect_1':box['trisect_1'], 'trisect_2':box['trisect_2'],'step_frame_force_magnitude':step_frame_force_magnitude}
             # If incomplete step, do nothing
             else:
                 pass 
@@ -1150,7 +1083,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         y_lower = out_R['avg_magnitude_curve'] - out_R['std_magnitude_curve']
         plt.plot(range(len(out_R['avg_magnitude_curve'])), out_R['avg_magnitude_curve'])
         plt.fill_between(range(len(out_R['avg_magnitude_curve'])), y_lower, y_upper, color='lightblue', alpha=0.5, label='Standard Deviation')
-        plt.title("Average Pressure Magnitude ")
+        plt.title("Average Force Magnitude (N)")
         plt.show()
         
     #"Foot Length (cm)": '245.3 \u00B1 4',
@@ -1164,6 +1097,10 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
     std_CoP_distance = []
     avg_contact_area = [] # In cm^2, each tile is .5 x .5 cm
     std_contact_area = []
+    avg_step_length = [] # In cm, each tile is .5 x .5 cm
+    std_step_length = []
+    avg_step_width = [] # In cm, each tile is .5 x .5 cm
+    std_step_width = []
     
     
     for side_steps in [left_steps, right_steps]:
@@ -1172,9 +1109,9 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         CoP_distances = []
         for step_key in side_steps:
             # Getting the number of frames in each step
-            step_durations.append(len(side_steps[step_key]['step_frame_pressure_magnitude'])/100) # frame count / sample rate = time in seconds
+            step_durations.append(len(side_steps[step_key]['step_frame_force_magnitude'])/100) # frame count / sample rate = time in seconds
             # Getting the max pressure in each step
-            step_max_force.append(max(side_steps[step_key]['step_frame_pressure_magnitude']))
+            step_max_force.append(max(side_steps[step_key]['step_frame_force_magnitude']))
             # Getting the distance of the CoP trajectory
             x = side_steps[step_key]['rc_CoP_x']
             y = side_steps[step_key]['rc_CoP_y']
@@ -1192,48 +1129,84 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
     
     # Pulling more info from the align_and_average_heatmaps_padded outputs to get step geometry
     for step_masks in [avg_right, avg_left]:
+        step_keys = step_masks['step_keys']
         contact_areas = []
         step_lengths = []
         step_widths = []
         
         # Going through each individual step mask and summing all true tiles to get area
-        padded_masks = step_masks['padded_masks']
-        for padded_mask in padded_masks:
-            contact_areas.append(np.sum(padded_mask)*tile_size**2)
+        aligned_masks = step_masks['aligned_masks']
+        aligned_trisects_list = step_masks['aligned_trisections']
+        for step_key, aligned_mask, aligned_trisects in zip(step_keys, aligned_masks, aligned_trisects_list):
+            # Calculating contact area in cm^2 and adding to contact areas list for averaging
+            contact_area = np.sum(aligned_mask)*tile_size**2
+            contact_areas.append(contact_area)
+            
+            # Calculating length in cm and adding to length list for averaging
+            # Find rows containing at least one True
+            rows_with_true = np.any(aligned_mask, axis=1)
+            
+            # Get the indices of these rows
+            true_row_indices = np.where(rows_with_true)[0]
+            
+            # Extract the first and last row indices
+            if true_row_indices.size > 0:
+                first_true_row_index = true_row_indices[0]
+                last_true_row_index = true_row_indices[-1]
+                
+                step_length = (last_true_row_index - first_true_row_index)*tile_size
+            else:
+                step_length = 0
+            
+            step_lengths.append(step_length)
+
+            # Calculate width by only scanning above the first trisection and finding the longest continuous line
+            # There is maybe already a trisection key in the dictionary I should access instead of recalculating
+            
+            
+            
+            plt.imshow(aligned_mask, cmap=jet_cmap)
+            plt.title(f'step ID: {step_key} | Contact Area: {contact_area}\nLength : {step_length} | Width : {777}')
+            plt.hlines(aligned_trisects[0], 0, aligned_mask.shape[1]-1 )
+            plt.hlines(aligned_trisects[1], 0, aligned_mask.shape[1]-1 )
+            plt.show()
         
         avg_contact_area.append(np.mean(np.array(contact_areas)))
         std_contact_area.append(np.std(np.array(contact_areas)))
+        
+        avg_step_length.append(np.mean(np.array(step_lengths)))
+        std_step_length.append(np.std(np.array(step_lengths)))
         
             
      # saving the metrics
     left_metrics = {
         "Step Duration (sec)": f'{avg_step_duration[0]:.2f}  \u00B1 {std_step_duration[0]:.2f}',
         "Contact Area (cm\u00b2)": f'{avg_contact_area[0]:.1f} \u00B1 {std_contact_area[0]:.1f}',
-        "Foot Length (cm)": 7,
-        "Foot Width (cm)": 12.7,
-        "Peak Pressure (kPa)": '',
-        "Average Pressure (kPa)": '',
+        "Foot Length (cm)": f'{ avg_step_length[0]:.1f} \u00B1 {std_step_length[0]:.1f}',
+        "Foot Width (cm)": 'WIP',
+        "Peak Pressure (kPa)": 'WIP',
+        "Average Pressure (kPa)": 'WIP',
         "Maximum Force (N)": f'{avg_step_max_force[0]:.0f}  \u00B1 {std_step_max_force[0]:.0f}',
         "CoP Distance (cm)": f'{avg_CoP_distance[0]:.1f} \u00B1 {std_CoP_distance[0]:.1f}',
-        "CoP Diplacement (cm)": f'\u00B1',
-        "Walking Arch Index (%)": '',
-        "CPEI (%)": '',
-        "FPA (\u00b0)": '',
+        "CoP Diplacement (cm)": 'WIP',
+        "Walking Arch Index (%)": 'WIP',
+        "CPEI (%)": 'WIP',
+        "FPA (\u00b0)": 'WIP',
     }
     
     right_metrics = {
         "Step Duration (sec)": f'{avg_step_duration[1]:.2f}  \u00B1 {std_step_duration[1]:.2f}',
         "Contact Area (cm\u00b2)": f'{avg_contact_area[1]:.1f} \u00B1 {std_contact_area[1]:.1f}',
-        "Foot Length (cm)": 7,
-        "Foot Width (cm)": 12.7,
-        "Peak Pressure (kPa)": '',
-        "Average Pressure (kPa)": '',
+        "Foot Length (cm)": f'{ avg_step_length[1]:.1f} \u00B1 {std_step_length[1]:.1f}',
+        "Foot Width (cm)": 'WIP',
+        "Peak Pressure (kPa)": 'WIP',
+        "Average Pressure (kPa)": 'WIP',
         "Maximum Force (N)": f'{avg_step_max_force[1]:.0f}  \u00B1 {std_step_max_force[1]:.0f}',
         "CoP Distance (cm)": f'{avg_CoP_distance[1]:.1f} \u00B1 {std_CoP_distance[1]:.1f}',
-        "CoP Diplacement (cm)": f'\u00B1',
-        "Walking Arch Index (%)": '',
-        "CPEI (%)": '',
-        "FPA (\u00b0)": '',
+        "CoP Diplacement (cm)": 'WIP',
+        "Walking Arch Index (%)": 'WIP',
+        "CPEI (%)": 'WIP',
+        "FPA (\u00b0)": 'WIP',
     }
     # =====================================================
     
@@ -1372,8 +1345,9 @@ def align_and_average_heatmaps_padded(
         {'step_i': {'rc_step_max': 2D float array,
                     'rc_CoP_x':  1D float array (columns),
                     'rc_CoP_y':  1D float array (rows)}},
-                    'step_frame_pressure_magnitude': 1D float array
-        
+                    'step_frame_force_magnitude': 1D float array
+                    'trisect_1':
+                    'trisect_2':
                     lots of other info that won't be used...
         'rc' indicates that the data has been rotated vertically and cropped
     alignment_threshold_kPa : float
@@ -1397,6 +1371,7 @@ def align_and_average_heatmaps_padded(
       'shifts':            list[(dy, dx)],        # one per input, ref gets (0,0)
       'padded_cop':        list[{'x': 1D, 'y': 1D}],
       'aligned_cop':       list[{'x': 1D, 'y': 1D}],
+      'aligned_trisections': list[aligned_trisect_1, aligned_trisect_2)] # y coords shifted with alignment
       'avg_cop':           {'x': 1D length=avg_cop_points, 'y': 1D length=avg_cop_points}
       'avg_magnitude_curve': avg_magnitude_curve, # avg pressure magnitude throughout step duration
       'std_magnitude_curve': std_magnitude_curve
@@ -1406,11 +1381,12 @@ def align_and_average_heatmaps_padded(
     step_keys = list(side_steps_dict.keys())
 
     # 0) Collect heatmaps and infer target canvas (largest H/W + small margin)
-    H_list, W_list, heatmaps, cop_x_list, cop_y_list = [], [], [], [], []
+    H_list, W_list, heatmaps, cop_x_list, cop_y_list, trisections_list = [], [], [], [], [], []
     for k in step_keys:
         hm = side_steps_dict[k]['rc_step_max']
         H_list.append(hm.shape[0]); W_list.append(hm.shape[1])
         heatmaps.append(hm)
+        trisections_list.append([side_steps_dict[k]['trisect_1'], side_steps_dict[k]['trisect_2']])
         cop_x_list.append(np.asarray(side_steps_dict[k]['rc_CoP_x'], float))
         cop_y_list.append(np.asarray(side_steps_dict[k]['rc_CoP_y'], float))
 
@@ -1424,15 +1400,13 @@ def align_and_average_heatmaps_padded(
     # 2) Pad to fixed canvas (centered) and keep per-sample offsets
     padded_heatmaps, heat_offsets = pad_list_to_target(heatmaps, target_shape, is_mask=False)
     padded_masks,    mask_offsets = pad_list_to_target(masks,    target_shape, is_mask=True)
-    # (offsets are identical for heatmap/mask, but we keep both for clarity)
-    # heat_offsets[i] = (r0, c0) added to original CoP to land in the canvas before alignment
 
     # 3) Reference mask (already padded)
     ref_mask = padded_masks[reference_index]
 
     # 4) Align everyone to the reference (on masks), then shift heatmaps accordingly
-    aligned_heatmaps, aligned_masks, shifts = [], [], []
-    for i, (hm_pad, m_pad) in enumerate(zip(padded_heatmaps, padded_masks)):
+    aligned_heatmaps, aligned_masks, aligned_trisections, shifts = [], [], [], []
+    for i, (hm_pad, m_pad, trisect) in enumerate(zip(padded_heatmaps, padded_masks, trisections_list)):
         if i == reference_index or m_pad.sum() < 5:
             aligned_heatmaps.append(hm_pad)
             aligned_masks.append(m_pad)
@@ -1441,6 +1415,9 @@ def align_and_average_heatmaps_padded(
         dy, dx = phase_correlation_shift(ref_mask, m_pad)
         aligned_heatmaps.append(shift_with_nan(hm_pad, dy, dx))
         aligned_masks.append(shift_mask(m_pad, dy, dx))
+        aligned_trisect_1 = trisect[0] + dy
+        aligned_trisect_2 = trisect[1] + dy
+        aligned_trisections.append([aligned_trisect_1, aligned_trisect_2])
         shifts.append((dy, dx))
 
     # 5) Averages & overlaps
@@ -1488,14 +1465,14 @@ def align_and_average_heatmaps_padded(
 
     # Resampling and averaging magnitudes of each step throughout the duration of the step
     # Resample each step to the same length
-    resampled_pressure_magnitudes = [resample_pressure_magnitudes(val["step_frame_pressure_magnitude"], n_points=100)
+    resampled_force_magnitudes = [resample_pressure_magnitudes(val["step_frame_force_magnitude"], n_points=100)
                  for val in side_steps_dict.values()]
     
-    resampled_pressure_magnitudes = np.vstack(resampled_pressure_magnitudes)
+    resampled_force_magnitudes = np.vstack(resampled_force_magnitudes)
     
     # Compute mean and std across steps
-    avg_magnitude_curve = np.mean(resampled_pressure_magnitudes, axis=0)
-    std_magnitude_curve = np.std(resampled_pressure_magnitudes, axis=0)
+    avg_magnitude_curve = np.mean(resampled_force_magnitudes, axis=0)
+    std_magnitude_curve = np.std(resampled_force_magnitudes, axis=0)
     
     
     
@@ -1511,6 +1488,7 @@ def align_and_average_heatmaps_padded(
         'padded_cop':       padded_cop,        # list of per-step traces in padded (pre-align) canvas
         'aligned_cop':      aligned_cop,       # list of per-step traces in aligned canvas
         'avg_cop':          {'x': avg_cop_x, 'y': avg_cop_y, 'n_points': avg_cop_points},
+        'aligned_trisections': aligned_trisections,
         'target_shape':     target_shape,      # handy to keep around
         'step_keys':        step_keys,          # maps list indices back to your dict keys
         'avg_magnitude_curve': avg_magnitude_curve, # avg pressure magnitude throughout step duration
