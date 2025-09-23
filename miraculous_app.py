@@ -64,45 +64,80 @@ marks = {0: "Start", num_frames - 1: "End"}
 #####################
 tab1 = html.Div([
         html.Div([
-            dcc.Graph(id="heatmap-frame", style={"height": "435px", "width": "990px", "marginBottom": "0px"}),
-            html.Div(html.Button("▶ Play", id="play-pause-btn", n_clicks=0), style={'textAlign': 'center'}),
-            dcc.Interval(id="frame-interval", interval=20, disabled=True),  # 20 ms per frame
-            dcc.Slider(
-                id="frame-slider",
-                min=0,
-                max=num_frames - 1,
-                value=0,
-                step=1,
-                marks=marks,
-                tooltip={"placement": "bottom", "always_visible": True},
-                updatemode='mouseup'
-            )], style={'flex': '2', 'paddingRight': '20px'}),
+            html.Div([
+                dcc.Graph(id="heatmap-frame", style={"height": "435px", "width": "990px", "marginBottom": "0px"}),
+                html.Div(html.Button("▶ Play", id="play-pause-btn", n_clicks=0), style={'textAlign': 'center'}),
+                dcc.Interval(id="frame-interval", interval=20, disabled=True),  # 20 ms per frame
+                dcc.Slider(
+                    id="frame-slider",
+                    min=0,
+                    max=num_frames - 1,
+                    value=0,
+                    step=1,
+                    marks=marks,
+                    tooltip={"placement": "bottom", "always_visible": True},
+                    updatemode='mouseup'
+                )], style={'flex': '2', 'paddingRight': '20px'}),
+    
+            html.Div([
+                html.H4("Pass Selection Table", style={'textAlign': 'center'}),
+                dash_table.DataTable(
+                    id='pass-table',
+                    columns=[
+                        {"name": "Pass #", "id": "pass_idx", "type": "numeric", "editable": False},
+                        {"name": "Start Frame", "id": "start_frame", "type": "numeric", "editable": True},
+                        {"name": "End Frame", "id": "end_frame", "type": "numeric", "editable": True}
+                    ],
+                    data=[],
+                    editable=True,
+                    row_deletable=False,
+                    style_table={'overflowX': 'auto'},
+                    style_cell={'textAlign': 'center'}
+                ),
+                html.Div([html.Button("Add Pass", id="add-pass", n_clicks=0, style={'marginTop': '10px', 'marginRight': '10px'}),
+                          html.Button("Remove Pass", id="remove-pass", n_clicks=0)], style={'textAlign': 'center'}),
+                    
+                html.Div([html.Button("Save and Process Passes", id="process-passes", n_clicks=0, style={'marginTop': '10px'}),
+                          dcc.Loading(id="loading-box", type="default", children=html.Div(id="processing-complete-message"), style={'marginTop': '70px'})] , style={'textAlign': 'center'})
+                         
+                ], style={'flex': '1'})
+        ], style={'display': 'flex', 'flexDirection': 'row'}),
 
-        html.Div([
-            html.H4("Pass Selection Table", style={'textAlign': 'center'}),
-            dash_table.DataTable(
-                id='pass-table',
-                columns=[
-                    {"name": "Pass #", "id": "pass_idx", "type": "numeric", "editable": False},
-                    {"name": "Start Frame", "id": "start_frame", "type": "numeric", "editable": True},
-                    {"name": "End Frame", "id": "end_frame", "type": "numeric", "editable": True}
-                ],
-                data=[],
-                editable=True,
-                row_deletable=False,
-                style_table={'overflowX': 'auto'},
-                style_cell={'textAlign': 'center'}
-            ),
-            html.Div([html.Button("Add Pass", id="add-pass", n_clicks=0, style={'marginTop': '10px', 'marginRight': '10px'}),
-                      html.Button("Remove Pass", id="remove-pass", n_clicks=0)], style={'textAlign': 'center'}),
-                
-            html.Div([html.Button("Save and Process Passes", id="process-passes", n_clicks=0, style={'marginTop': '10px'}),
-                      dcc.Loading(id="loading-box", type="default", children=html.Div(id="processing-complete-message"), style={'marginTop': '70px'})] , style={'textAlign': 'center'})
-                     
-            ], style={'flex': '1'})
-    ], style={'display': 'flex', 'flexDirection': 'row'})
+    
+    
+    html.Div([html.H4("Input Patient Information", style={'textAlign': 'left', 'marginTop': '30px'}),
+              html.Label("First Name: "),
+              dcc.Input(id="first-name", type="text", placeholder="Enter first name"),
+              html.Br(),
+              html.Label("Last Name: "),
+              dcc.Input(id="last-name", type="text", placeholder="Enter last name", style={'marginTop': '10px'}),
+              html.Br(),
+              html.Div([
+                        html.Label("Sex: ", style={"marginRight": "10px"}),
+                        dcc.Dropdown(
+                            id="sex",
+                            options=[
+                                {"label": "Male", "value": "Male"},
+                                {"label": "Female", "value": "Female"},
+                            ],
+                            placeholder="Select sex",
+                            style={"width": "150px"}
+                        )
+                    ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
+              html.Label("Date of Birth (YYYY-MM-DD): "),
+              dcc.Input(id="birth-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
+
+              html.Br(),
+              html.Label("Date of Assessment (YYYY-MM-DD): "),
+              dcc.Input(id="assessment-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
+
+            html.Br(),
+            html.Label("Notes: "),
+            dcc.Input(id="notes", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
 
 
+             ])
+    ])
 
 
 tab2 = html.Div([
@@ -1007,14 +1042,14 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             plt.hlines(box['trisect_1'], 0, box['rc_step_max'].shape[1]-1)
             plt.hlines(box['trisect_2'], 0, box['rc_step_max'].shape[1]-1)
             plt.plot(box['rc_CoP_x'], box['rc_CoP_y'])
-            plt.title("Rotated and Cropped Step")
+            plt.title(f"Rotated and Cropped P{pass_id}_S{step_number}")
             plt.show()
             
             #Plotting the total pressure magnitude per step frames
             # Each sensor is .000025m^2 and the original pressure is in kPa, so multiplying out to get force: F = P*A
             step_frame_force_magnitude = ((1000*.000025)*box['original_step_frames'][:]).sum(axis=(1, 2))
             plt.plot(range(len(step_frame_force_magnitude)), step_frame_force_magnitude)
-            plt.title('Force Magnitude (N per frame)')
+            plt.title('Force Magnitude (N)')
             plt.show()
             
             # If left step
@@ -1133,11 +1168,14 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         contact_areas = []
         step_lengths = []
         step_widths = []
+        arch_indexes = []
+        
         
         # Going through each individual step mask and summing all true tiles to get area
         aligned_masks = step_masks['aligned_masks']
         aligned_trisects_list = step_masks['aligned_trisections']
         for step_key, aligned_mask, aligned_trisects in zip(step_keys, aligned_masks, aligned_trisects_list):
+
             # Calculating contact area in cm^2 and adding to contact areas list for averaging
             contact_area = np.sum(aligned_mask)*tile_size**2
             contact_areas.append(contact_area)
@@ -1161,12 +1199,13 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             step_lengths.append(step_length)
 
             # Calculate width by only scanning above the first trisection and finding the longest continuous line
-            # There is maybe already a trisection key in the dictionary I should access instead of recalculating
+
+            # Calculating the arch index
             
             
             
             plt.imshow(aligned_mask, cmap=jet_cmap)
-            plt.title(f'step ID: {step_key} | Contact Area: {contact_area}\nLength : {step_length} | Width : {777}')
+            plt.title(f'Step ID: {step_key} | Contact Area: {contact_area} cm\u00b2\nLength : {step_length} cm | Width : {777} cm')
             plt.hlines(aligned_trisects[0], 0, aligned_mask.shape[1]-1 )
             plt.hlines(aligned_trisects[1], 0, aligned_mask.shape[1]-1 )
             plt.show()
@@ -1176,6 +1215,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         
         avg_step_length.append(np.mean(np.array(step_lengths)))
         std_step_length.append(np.std(np.array(step_lengths)))
+        
         
             
      # saving the metrics
@@ -1410,27 +1450,29 @@ def align_and_average_heatmaps_padded(
         if i == reference_index or m_pad.sum() < 5:
             aligned_heatmaps.append(hm_pad)
             aligned_masks.append(m_pad)
+            #aligned_trisections.append([trisect[0], trisect[1]])
             shifts.append((0, 0))
             continue
         dy, dx = phase_correlation_shift(ref_mask, m_pad)
         aligned_heatmaps.append(shift_with_nan(hm_pad, dy, dx))
         aligned_masks.append(shift_mask(m_pad, dy, dx))
-        aligned_trisect_1 = trisect[0] + dy
-        aligned_trisect_2 = trisect[1] + dy
-        aligned_trisections.append([aligned_trisect_1, aligned_trisect_2])
+        #aligned_trisect_1 = trisect[0] + dy
+        #aligned_trisect_2 = trisect[1] + dy
+        #aligned_trisections.append([aligned_trisect_1, aligned_trisect_2])
         shifts.append((dy, dx))
 
     # 5) Averages & overlaps
     avg_heatmap = nanmean_stack(aligned_heatmaps)
     mask_stack  = np.stack([m.astype(float) for m in aligned_masks], axis=0)
-    avg_mask    = mask_stack.mean(axis=0)          # fraction (0..1)
+    avg_mask    = mask_stack.mean(axis=0)          
     overlap_mask = mask_stack.sum(axis=0) > 0
 
-    # 6) Transform CoP traces into the same canvas & alignment
+    # 6) Transform CoP traces and trisects into the same canvas & alignment
     padded_cop = []
     aligned_cop = []
+    aligned_trisections = []
 
-    for i, (cx, cy) in enumerate(zip(cop_x_list, cop_y_list)):
+    for i, (cx, cy, trisect) in enumerate(zip(cop_x_list, cop_y_list, trisections_list)):
         # drop non-finite samples
         valid = np.isfinite(cx) & np.isfinite(cy)
         cx = cx[valid]; cy = cy[valid]
@@ -1444,6 +1486,14 @@ def align_and_average_heatmaps_padded(
         dy, dx = shifts[i]
         cx_aln = cx_pad + dx
         cy_aln = cy_pad + dy
+
+        
+        # This is new
+        aligned_trisect_1 = trisect[0] + r0 + dy
+        aligned_trisect_2 = trisect[1] + r0 + dy
+        aligned_trisections.append([aligned_trisect_1, aligned_trisect_2])
+        
+        
 
         padded_cop.append({'x': cx_pad, 'y': cy_pad})
         aligned_cop.append({'x': cx_aln, 'y': cy_aln})
