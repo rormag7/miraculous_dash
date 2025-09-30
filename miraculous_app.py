@@ -44,10 +44,10 @@ class_colors = {0:'grey',
 app = dash.Dash(__name__)
 
 # Load .npz file with hardcoded filename, this will eventually get replaced
-trial_file = "S145_W1.npz" #S145_W1.npz"
+trial_file = "S145_W1.npz" 
 trial_name, ext = os.path.splitext(trial_file)
 data = np.load(trial_file)
-trial_frames = data['arr_0'][0:2000] # WILL NEED TO REMOVE [0:2000] LATER BUT WILL HELP TO SPEED UP DEVELOPMENT
+trial_frames = data['arr_0'][0:1500] # WILL NEED TO REMOVE [:] LATER BUT WILL HELP TO SPEED UP DEVELOPMENT
 sample_rate = 100 #Hz
 tile_size = 0.5 # cm 
 
@@ -102,44 +102,44 @@ tab1 = html.Div([
                          
                 ], style={'flex': '1'})
         ], style={'display': 'flex', 'flexDirection': 'row'}),
+        
+        
+        html.Div([html.H4("Input Patient Information", style={'textAlign': 'left', 'marginTop': '30px'}),
+                  html.Label("First Name: "),
+                  dcc.Input(id="first-name", type="text", placeholder="Enter first name"),
+                  html.Br(),
+                  html.Label("Last Name: "),
+                  dcc.Input(id="last-name", type="text", placeholder="Enter last name", style={'marginTop': '10px'}),
+                  html.Br(),
+                  html.Div([
+                            html.Label("Sex: ", style={"marginRight": "10px"}),
+                            dcc.Dropdown(
+                                id="sex",
+                                options=[
+                                    {"label": "Male", "value": "Male"},
+                                    {"label": "Female", "value": "Female"},
+                                ],
+                                placeholder="Select sex",
+                                style={"width": "150px"}
+                            )
+                        ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
+                  
+                  html.Label("Date of Birth (YYYY-MM-DD): "),
+                  dcc.Input(id="birth-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
 
-    
-    
-    html.Div([html.H4("Input Patient Information", style={'textAlign': 'left', 'marginTop': '30px'}),
-              html.Label("First Name: "),
-              dcc.Input(id="first-name", type="text", placeholder="Enter first name"),
-              html.Br(),
-              html.Label("Last Name: "),
-              dcc.Input(id="last-name", type="text", placeholder="Enter last name", style={'marginTop': '10px'}),
-              html.Br(),
-              html.Div([
-                        html.Label("Sex: ", style={"marginRight": "10px"}),
-                        dcc.Dropdown(
-                            id="sex",
-                            options=[
-                                {"label": "Male", "value": "Male"},
-                                {"label": "Female", "value": "Female"},
-                            ],
-                            placeholder="Select sex",
-                            style={"width": "150px"}
-                        )
-                    ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
-              
-              html.Label("Date of Birth (YYYY-MM-DD): "),
-              dcc.Input(id="birth-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
+                  html.Br(),
+                  html.Label("Date of Assessment (YYYY-MM-DD): "),
+                  dcc.Input(id="assessment-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
 
-              html.Br(),
-              html.Label("Date of Assessment (YYYY-MM-DD): "),
-              dcc.Input(id="assessment-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
+                html.Br(),
+                html.Label("Notes: "),
+                dcc.Input(id="notes", type="text", placeholder="", style={'marginTop': '10px', 'width': '250px'}),
+                
+                html.Br(),
+                html.Button("Save Patient Information", id="save-patient-info", n_clicks=0, style={"marginTop": "20px"})
 
-            html.Br(),
-            html.Label("Notes: "),
-            dcc.Input(id="notes", type="text", placeholder="", style={'marginTop': '10px', 'width': '250px'}),
-            
-            html.Br(),
-            html.Button("Save Patient Information", id="save-patient-info", n_clicks=0, style={"marginTop": "20px"})
+                 ])
 
-             ])
     ])
 
 
@@ -387,7 +387,7 @@ def update_trial_heatmap(frame_idx):
 
 @app.callback(
     Output("pass-table", "data"),
-    Output("processing-complete-message", "children", allow_duplicate=True),
+    Output("processing-complete-message", "children", allow_duplicate=True), 
     Input("add-pass", "n_clicks"),
     Input("remove-pass", "n_clicks"),
     State("pass-table", "data"),
@@ -405,9 +405,9 @@ def update_pass_table(add_clicks, remove_clicks, table_data):
     return table_data, ""
 
 @app.callback(
-    Output("processing-complete-message", "children"),
-    Output("shared-pass-table", "data"),
-    Output("pass-max-dict", "data"),
+    Output("processing-complete-message", "children", allow_duplicate=True), #true
+    Output("shared-pass-table", "data", allow_duplicate=True),
+    Output("pass-max-dict", "data", allow_duplicate=True),
     Output("bbox-info-dict", "data", allow_duplicate=True),
     Output("tabs", "value", allow_duplicate=True),                 
     Input("process-passes", "n_clicks"),
@@ -418,7 +418,7 @@ def process_passes(process_clicks, table_data):
     # Only run on a real click of the button
     if not process_clicks or ctx.triggered_id != "process-passes":
         raise dash.exceptions.PreventUpdate
-    
+        
     trial_dir = trial_name
     trial_info_path = f'{trial_dir}/trial_information.csv'
     trial_fieldnames=['pass_idx', 'start_frame', 'end_frame']
@@ -438,7 +438,7 @@ def process_passes(process_clicks, table_data):
     pred_fieldnames=['class', 'confidence', 'x0', 'y0', 'x1', 'y1',
                      'type', 'fillcolor', 'editable', 'line']
     
-    
+
     for pass_info in table_data:
         pass_idx = pass_info['pass_idx']
         start_frame = pass_info['start_frame']
@@ -447,8 +447,7 @@ def process_passes(process_clicks, table_data):
         pass_max_dict[pass_idx] = pass_max
         pass_dir = f"{trial_name}/Pass{pass_idx}"
         os.makedirs(pass_dir, exist_ok=True)
-        
-        
+
         image_path = f'{pass_dir}/{trial_name}_Pass{pass_idx}_image.png'
         pred_path = f'{pass_dir}/{trial_name}_Pass{pass_idx}_predictions.csv'
         
@@ -457,15 +456,16 @@ def process_passes(process_clicks, table_data):
         ax.imshow(pass_max, cmap=jet_cmap, aspect='auto')
         fig.savefig(image_path, dpi=dpi)
         plt.close(fig)
+        print("DEBUG 4")
+
         
         results = step_identification_model_l.predict(
             source= image_path,  # could be a file, folder, list, or even a NumPy array
             imgsz=736,                         # match training image size (if resized during training)
             conf=0.25,                         # confidence threshold (optional)
             save=True,                         # save output image(s) with boxes
-            project=pass_dir
+            project=pass_dir    
         )
-
         
         predictions = []
         for r in results:
@@ -900,12 +900,43 @@ def create_avg_figs(tab, left_data, right_data):
     )
     )
 
-    # Top-left origin + square pixels for EACH subplot independently
-    fig.update_yaxes(autorange="reversed", scaleanchor="x",  scaleratio=1, row=1, col=1)
-    fig.update_yaxes(autorange="reversed", scaleanchor="x2", scaleratio=1, row=1, col=2)
-    fig.update_xaxes(constrain="domain", row=1, col=1)
-    fig.update_xaxes(constrain="domain", row=1, col=2)
+
+    fig.update_yaxes(
+        title_text="Length (cm)",
+        tickvals=np.arange(0,101,10),             # positions in pixels
+        ticktext=[v * 0.5 for v in np.arange(0,101,10)],  # labels in cm
+        autorange="reversed", 
+        scaleanchor="x",
+        scaleratio=1,
+        row=1, col=1
+    )
     
+    fig.update_xaxes(
+        title_text="Width (cm)",
+        constrain="domain", 
+        tickvals=np.arange(0,101,10),             # positions in pixels
+        ticktext=[v * 0.5 for v in np.arange(0,101,10)],  # labels in cm
+        row=1, col=1
+    )
+    
+    fig.update_yaxes(
+        title_text="Length (cm)",
+        tickvals=np.arange(0,101,10),             # positions in pixels
+        ticktext=[v * 0.5 for v in np.arange(0,101,10)],  # labels in cm
+        autorange="reversed", 
+        scaleanchor="x2",
+        scaleratio=1,
+        row=1, col=2
+    )
+    
+    fig.update_xaxes(
+        title_text="Width (cm)",
+        constrain="domain", 
+        tickvals=np.arange(0,101,10),             # positions in pixels
+        ticktext=[v * 0.5 for v in np.arange(0,101,10)],  # labels in cm
+        row=1, col=2
+    )
+        
     
     
     left_avg_mag = np.array(left_data['avg_magnitude_curve'])
@@ -1746,5 +1777,13 @@ def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)
+    
+
+
+
+# Will add this in later
+    
+    """
+    """
    
