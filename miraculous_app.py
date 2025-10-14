@@ -127,7 +127,7 @@ tab1 = html.Div([
                         ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
                   
                   html.Label("Body Weight (N): "),
-                  dcc.Input(id="body-weight", type="text", placeholder="0", style={'marginTop': '10px'}),
+                  dcc.Input(id="body-weight", type="number", placeholder="0", style={'marginTop': '10px'}),
                   
                   html.Br(),
                   html.Label("Date of Birth (YYYY-MM-DD): "),
@@ -916,12 +916,13 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
     Input("tabs", "value"),
     Input("avg-left-data", "data"),
     Input("avg-right-data", "data"),
+    State("patient-info-store", "data"),
     prevent_initial_call=True
 )
-def create_avg_figs(tab, left_data, right_data):
+def create_avg_figs(tab, left_data, right_data, patient_info):
     if tab != "tab-3" or not left_data or not right_data:
         raise dash.exceptions.PreventUpdate
-
+    
     # Unpack → allow different shapes
     hm_l = np.asarray(left_data["avg_heatmap"])
     cx_l = left_data["avg_cop"]["x"]
@@ -1030,26 +1031,28 @@ def create_avg_figs(tab, left_data, right_data):
         
     
     # Average force curve code below...
+    body_weight = patient_info["body_weight"]
+    
     left_avg_mag = np.array(left_data['avg_magnitude_curve'])
     left_std_mag = np.array(left_data['std_magnitude_curve'])
+    left_avg_mag_BW = np.array(left_data['avg_magnitude_curve']) / body_weight * 100 # Normalized BW percentages
+    left_std_mag_BW = np.array(left_data['std_magnitude_curve']) / body_weight * 100
     
     right_avg_mag = np.array(right_data['avg_magnitude_curve'])
     right_std_mag = np.array(right_data['std_magnitude_curve'])
+    right_avg_mag_BW = np.array(right_data['avg_magnitude_curve']) / body_weight * 100
+    right_std_mag_BW = np.array(right_data['std_magnitude_curve']) / body_weight * 100
     
-    left_mag_x = np.linspace(0, 100, len(left_avg_mag))  # step cycle percentage
-    
-    right_mag_x = np.linspace(0, 100, len(right_avg_mag))
+    left_mag_x = np.linspace(0, 100, len(left_avg_mag))  # left step cycle percentage
+    right_mag_x = np.linspace(0, 100, len(right_avg_mag)) # right step cycle percentage
     
     mag_fig = go.Figure()
-    
-    
-
     
     # Average curve
     mag_fig.add_trace(
         go.Scatter(
             x=left_mag_x,
-            y=left_avg_mag,
+            y=left_avg_mag_BW,
             mode="lines",
             line=dict(color="blue", width=2),
             name="Left Average"
@@ -1060,7 +1063,7 @@ def create_avg_figs(tab, left_data, right_data):
     mag_fig.add_trace(
         go.Scatter(
             x=np.concatenate([left_mag_x, left_mag_x[::-1]]), 
-            y=np.concatenate([left_avg_mag - left_std_mag, (left_avg_mag + left_std_mag)[::-1]]),
+            y=np.concatenate([left_avg_mag_BW - left_std_mag_BW, (left_avg_mag_BW + left_std_mag_BW)[::-1]]),
             fill="toself",
             fillcolor="rgba(0, 100, 255, 0.1)",
             line=dict(color="rgba(255,255,255,0)"),  # hide line
@@ -1076,7 +1079,7 @@ def create_avg_figs(tab, left_data, right_data):
     mag_fig.add_trace(
         go.Scatter(
             x=right_mag_x,
-            y=right_avg_mag,
+            y=right_avg_mag_BW,
             mode="lines",
             line=dict(color="red", width=2),
             name="Right Average"
@@ -1087,7 +1090,7 @@ def create_avg_figs(tab, left_data, right_data):
     mag_fig.add_trace(
         go.Scatter(
             x=np.concatenate([right_mag_x, right_mag_x[::-1]]), 
-            y=np.concatenate([right_avg_mag - right_std_mag, (right_avg_mag + right_std_mag)[::-1]]),
+            y=np.concatenate([right_avg_mag_BW - right_std_mag_BW, (right_avg_mag_BW + right_std_mag_BW)[::-1]]),
             fill="toself",
             fillcolor="rgba(255, 0, 0, 0.1)",
             line=dict(color="rgba(255,255,255,0)"),  # hide line
@@ -1107,7 +1110,7 @@ def create_avg_figs(tab, left_data, right_data):
         xanchor="center",   # anchor relative to x
         yanchor="top" ),      # anchor relative to y
         xaxis_title="Step cycle (%)",
-        yaxis_title="Force (N)",
+        yaxis_title="Body Weight %",
         template="plotly_white",
         legend=dict(
         orientation="h",
