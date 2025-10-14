@@ -107,9 +107,11 @@ tab1 = html.Div([
         html.Div([html.H4("Input Patient Information", style={'textAlign': 'left', 'marginTop': '30px'}),
                   html.Label("First Name: "),
                   dcc.Input(id="first-name", type="text", placeholder="Enter first name"),
+                  
                   html.Br(),
                   html.Label("Last Name: "),
                   dcc.Input(id="last-name", type="text", placeholder="Enter last name", style={'marginTop': '10px'}),
+                  
                   html.Br(),
                   html.Div([
                             html.Label("Sex: ", style={"marginRight": "10px"}),
@@ -124,6 +126,10 @@ tab1 = html.Div([
                             )
                         ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
                   
+                  html.Label("Body Weight (N): "),
+                  dcc.Input(id="body-weight", type="text", placeholder="0", style={'marginTop': '10px'}),
+                  
+                  html.Br(),
                   html.Label("Date of Birth (YYYY-MM-DD): "),
                   dcc.Input(id="birth-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
 
@@ -131,13 +137,60 @@ tab1 = html.Div([
                   html.Label("Date of Assessment (YYYY-MM-DD): "),
                   dcc.Input(id="assessment-date", type="text", placeholder="YYYY-MM-DD", style={'marginTop': '10px'}),
 
-                html.Br(),
-                html.Label("Notes: "),
-                dcc.Input(id="notes", type="text", placeholder="", style={'marginTop': '10px', 'width': '250px'}),
-                
-                html.Br(),
-                html.Button("Save Patient Information", id="save-patient-info", n_clicks=0, style={"marginTop": "20px"})
+                  html.Br(),
+                  html.Div([
+                            html.Label("Recording Type: ", style={"marginRight": "10px"}),
+                            dcc.Dropdown(
+                                id="recording-type",
+                                options=[
+                                    {"label": "Pathological", "value": "Pathological"},
+                                    {"label": "Normative", "value": "Normative"},
+                                ],
+                                placeholder="Select recording type",
+                                style={"width": "177px"}
+                            )
+                        ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
+                  
+                  
+                  html.Div([
+                            html.Label("Pathology: ", style={"marginRight": "10px"}),
+                            dcc.Dropdown(
+                                id="pathology",
+                                options=[
+                                    {"label": "Cerebral Palsy", "value": "Cerebral Palsy"},
+                                    {"label": "Club Foot", "value": "Club Foot"},
+                                    {"label": "ACL Pre Op", "value": "ACL Pre Op"},
+                                    {"label": "ACL Post Op", "value": "ACL Post Op"},
+                                    {"label": "NA", "value": "NA"},
+                                ],
+                                placeholder="Select pathology",
+                                style={"width": "150px"}
+                            )
+                        ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
 
+    
+                    html.Div([
+                              html.Label("Project: ", style={"marginRight": "10px"}),
+                              dcc.Dropdown(
+                                  id="project",
+                                  options=[
+                                      {"label": "Markerless Integration Study", "value": "Markerless Integration Study"},
+                                      {"label": "Club Foot Correction Project", "value": "Club Foot Correction Project"},
+                                      {"label": "ACL Rehab Project", "value": "ACL Rehab Project"},
+                                      {"label": "NA", "value": "NA"},
+                                  ],
+                                  placeholder="Select project",
+                                  style={"width": "150px"}
+                              )
+                          ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
+    
+
+                  html.Label("Notes: "),
+                  dcc.Input(id="patient-notes", type="text", placeholder="", style={'marginTop': '10px', 'width': '250px'}),
+                
+                  html.Br(),
+                  html.Button("Save Patient Information", id="save-patient-info", n_clicks=0, style={"marginTop": "20px"}),
+                  html.Div(id="patient-info-save-message", style={"marginTop": "10px", "color": "green"})
                  ])
 
     ])
@@ -302,7 +355,8 @@ app.layout = html.Div([
     dcc.Store(id="bbox-info-dict"), # This will allow for bbox info from all passes to be used among all tabs
     dcc.Store(id="pass-max-z"), # Also add a store to hold the z for the selected pass
     dcc.Store(id="avg-left-data"),
-    dcc.Store(id="avg-right-data")
+    dcc.Store(id="avg-right-data"),
+    dcc.Store(id="patient-info-store") # This stores the patient info inputted on the first tab
 ])
 
 
@@ -456,7 +510,6 @@ def process_passes(process_clicks, table_data):
         ax.imshow(pass_max, cmap=jet_cmap, aspect='auto')
         fig.savefig(image_path, dpi=dpi)
         plt.close(fig)
-        print("DEBUG 4")
 
         
         results = step_identification_model_l.predict(
@@ -502,7 +555,45 @@ def process_passes(process_clicks, table_data):
             
     return "Passes successfully processed.", table_data, pass_max_dict, pass_preds_dict, "tab-2"
 
-
+@app.callback(
+    Output("patient-info-store", "data"),
+    Output("patient-info-save-message","children"),
+    Input("save-patient-info", "n_clicks"),
+    State("first-name", "value"),
+    State("last-name", "value"),
+    State("sex", "value"),
+    State("body-weight", "value"),
+    State("birth-date", "value"),
+    State("assessment-date", "value"),
+    State("recording-type", "value"),
+    State("pathology", "value"),
+    State("project", "value"),
+    State("patient-notes", "value"),
+    prevent_initial_call=True
+)
+def save_patient_info(n_clicks, first_name, last_name, sex, body_weight, 
+                      birth_date, assessment_date, recording_type, pathology, 
+                      project, notes):
+    # Preventing updates if the button hasn't actually been clicked
+    if not n_clicks:
+       raise dash.exceptions.PreventUpdate
+       
+    # Store inputs as a dictionary
+    patient_data = {
+        "first_name": first_name,
+        "last_name": last_name,
+        "sex": sex,
+        "body_weight": body_weight,
+        "birth_date": birth_date,
+        "assessment_date": assessment_date,
+        "recording_type": recording_type,
+        "pathology": pathology,
+        "project": project,
+        "notes": notes
+    }
+    print("Saved Patient Info:", patient_data)  # for debugging
+    save_message = "Patient Information Successfully Saved."
+    return patient_data, save_message
 
 #####################
 ## TAB 2 CALLBACKS ##
@@ -938,27 +1029,26 @@ def create_avg_figs(tab, left_data, right_data):
     )
         
     
-    
+    # Average force curve code below...
     left_avg_mag = np.array(left_data['avg_magnitude_curve'])
     left_std_mag = np.array(left_data['std_magnitude_curve'])
     
     right_avg_mag = np.array(right_data['avg_magnitude_curve'])
     right_std_mag = np.array(right_data['std_magnitude_curve'])
     
-    # Example data
-    mag_x = np.linspace(0, 100, len(left_avg_mag))  # step cycle percentage
+    left_mag_x = np.linspace(0, 100, len(left_avg_mag))  # step cycle percentage
     
+    right_mag_x = np.linspace(0, 100, len(right_avg_mag))
     
     mag_fig = go.Figure()
     
-    # Standard deviation band (shaded area)
     
 
     
     # Average curve
     mag_fig.add_trace(
         go.Scatter(
-            x=mag_x,
+            x=left_mag_x,
             y=left_avg_mag,
             mode="lines",
             line=dict(color="blue", width=2),
@@ -966,9 +1056,10 @@ def create_avg_figs(tab, left_data, right_data):
         )
     )
     
+    # Standard deviation band (shaded area)
     mag_fig.add_trace(
         go.Scatter(
-            x=np.concatenate([mag_x, mag_x[::-1]]), 
+            x=np.concatenate([left_mag_x, left_mag_x[::-1]]), 
             y=np.concatenate([left_avg_mag - left_std_mag, (left_avg_mag + left_std_mag)[::-1]]),
             fill="toself",
             fillcolor="rgba(0, 100, 255, 0.1)",
@@ -984,7 +1075,7 @@ def create_avg_figs(tab, left_data, right_data):
     # Average curve
     mag_fig.add_trace(
         go.Scatter(
-            x=mag_x,
+            x=right_mag_x,
             y=right_avg_mag,
             mode="lines",
             line=dict(color="red", width=2),
@@ -992,9 +1083,10 @@ def create_avg_figs(tab, left_data, right_data):
         )
     )
     
+    # Standard deviation band (shaded area)
     mag_fig.add_trace(
         go.Scatter(
-            x=np.concatenate([mag_x, mag_x[::-1]]), 
+            x=np.concatenate([right_mag_x, right_mag_x[::-1]]), 
             y=np.concatenate([right_avg_mag - right_std_mag, (right_avg_mag + right_std_mag)[::-1]]),
             fill="toself",
             fillcolor="rgba(255, 0, 0, 0.1)",
@@ -1126,8 +1218,12 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             padded_m = padded_masks[i]
             Rm_axes[i].imshow(padded_m, origin='upper',cmap=jet_cmap)  # same coordinate frame
             Rm_axes[i].set_title(f"Step {R_step_key} Mask")
+            Rm_axes[i].set_xlabel("Width (px)")
+            Rm_axes[i].set_ylabel("Length (px)")
         Rm_axes[len(R_step_keys)].imshow(overlap_mask, origin='upper',cmap=jet_cmap)  # same coordinate frame
         Rm_axes[len(R_step_keys)].set_title("Step Masks Overlapped")
+        Rm_axes[len(R_step_keys)].set_xlabel("Width (px)")
+        Rm_axes[len(R_step_keys)].set_ylabel("Length (px)")
         Rm_fig.tight_layout()
         
         # Plotting the heatmaps
@@ -1140,10 +1236,13 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             R_axes[i].imshow(padded_hm, origin='upper',cmap=jet_cmap)  # same coordinate frame
             R_axes[i].plot(padded_CoP_x, padded_CoP_y, linewidth=2)    # overlay avg CoP trajectory
             R_axes[i].set_title(f"Step {R_step_key} Heatmap")
-            #plt.show()
+            R_axes[i].set_xlabel("Width (px)")
+            R_axes[i].set_ylabel("Length (px)")
         R_axes[len(R_step_keys)].imshow(avg_hm, origin='upper',cmap=jet_cmap)  # same coordinate frame
         R_axes[len(R_step_keys)].plot(avg_cx, avg_cy, linewidth=2)    # overlay avg CoP trajectory
         R_axes[len(R_step_keys)].set_title("Steps Average Heatmap")
+        R_axes[len(R_step_keys)].set_xlabel("Width (px)")
+        R_axes[len(R_step_keys)].set_ylabel("Length (px)")
         R_fig.tight_layout()
         plt.show()
         
@@ -1756,7 +1855,7 @@ def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
     total_pressure_per_frame = step_data.sum(axis=(1, 2))
     
   
-    
+    # Finding all frames where the cumulative pressure exceeds the threshold
     active_frames = np.where(total_pressure_per_frame > threshold_kPa)
 
     # Setting the number of frames to pad the threshold with in case the first or last active frames are lower than the threshold value
@@ -1778,12 +1877,4 @@ def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
 
 if __name__ == "__main__":
     app.run(debug=False)
-    
-
-
-
-# Will add this in later
-    
-    """
-    """
    
