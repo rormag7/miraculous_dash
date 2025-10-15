@@ -15,6 +15,15 @@ import csv
 import copy
 import pandas as pd
 import math
+import base64
+import json
+from io import BytesIO
+from datetime import datetime
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
 from sklearn.decomposition import PCA
 from scipy import ndimage as ndi
 from ultralytics import YOLO
@@ -315,11 +324,55 @@ tab3 = html.Div([
 
 tab4 = html.Div([
     html.H4("Preview and Generate report PDF"),
-    html.P("Add section where operator can add notes!!!")
+    html.P("Dropdown for trial std or normative range?"),
+    html.P("Dropdown to change color of metric value in the table based on if it is high, low, or in range?"),
+    html.P("Specify file name and save location? This may be have a default based on pathology and research project but can be changed"),
+    html.Div(
+        [
+            html.Div(
+                [html.Button("Generate PDF", id="generate-pdf", n_clicks=0, style={"marginTop": "16px"})],
+            ),
+            dcc.Download(id="download-pdf"),
+
+            html.Hr(),
+            html.H4("PDF Preview"),
+
+            # Controls for the PDF iframe
+            html.Div(
+                [
+                    html.Button("Refresh Preview", id="refresh-preview", n_clicks=0,
+                                style={"marginRight": "8px"}),
+                    dcc.Checklist(
+                        id="fit-width",
+                        options=[{"label": " Fit preview to tab width", "value": "fit"}],
+                        value=[],
+                        style={"display": "inline-block", "verticalAlign": "middle"}
+                    ),
+                ],
+                style={"marginBottom": "8px"}
+            ),
+
+            # True PDF preview
+            dcc.Loading(
+                html.Iframe(
+                    id="pdf-preview",
+                    style={
+                        # 8.5x11 in at ~96 dpi => ~816x1056 px (nice physical feel)
+                        "width": "816px",
+                        "height": "1056px",
+                        "border": "1px solid #ccc",
+                        "background": "white",
+                        "boxShadow": "0 0 8px rgba(0,0,0,0.15)"
+                    }
+                ),
+                type="default"
+            ),
+            html.Div(id="pdf-preview-note",
+                     style={"color": "#666", "fontSize": "12px", "marginTop": "6px"}),
+        ],
+        style={"padding": "16px"}
+    )
 ])
-
-
-
 
 
 
@@ -386,7 +439,6 @@ def render_tab_content(tab):
 #####################
 ## TAB 1 CALLBACKS ##
 #####################
-
 @app.callback(
     Output("frame-interval", "disabled"),
     Output("play-pause-btn", "children"),
@@ -592,7 +644,7 @@ def save_patient_info(n_clicks, first_name, last_name, sex, body_weight,
         "notes": notes
     }
     print("Saved Patient Info:", patient_data)  # for debugging
-    save_message = "Patient Information Successfully Saved."
+    save_message = "Patient information successfully saved."
     return patient_data, save_message
 
 #####################
@@ -906,8 +958,6 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 #####################
 ## TAB 3 CALLBACKS ##
 #####################
-# Callback to add average metrics to table
-
 
 # Callback to display average step heatmaps and average table data
 @app.callback(
@@ -1046,6 +1096,8 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
     left_mag_x = np.linspace(0, 100, len(left_avg_mag))  # left step cycle percentage
     right_mag_x = np.linspace(0, 100, len(right_avg_mag)) # right step cycle percentage
     
+    init_thresh = 75  # initial line value
+    
     mag_fig = go.Figure()
     
     # Average curve
@@ -1073,8 +1125,6 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
         )
     )
     
-    
-    
     # Average curve
     mag_fig.add_trace(
         go.Scatter(
@@ -1100,6 +1150,23 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
         )
     )
     
+    # Legend-visible trace (mirrors draggable shape)
+    mag_fig.add_trace(go.Scatter(
+        x=[0, 100],
+        y=[init_thresh, init_thresh],
+        mode="lines",
+        line=dict(dash="dash", width=2),
+        name=f"{init_thresh:.0f}% BW",
+    ))
+
+    # Draggable horizontal shape for the threshold(drag along y)
+    mag_fig.add_shape(
+        type="line",
+        xref="paper", yref="y",
+        x0=0, x1=1,         # span full plot width
+        y0=init_thresh, y1=init_thresh,
+        line=dict(color="orange", width=2, dash="dash"),
+    )
     
     # Layout
     mag_fig.update_layout(
@@ -1120,10 +1187,7 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
         ) 
     )
  
-        
-    
     return fig, mag_fig
-
 
 # Callback to get average step metrics and add metrics to average metrics table
 @app.callback(
@@ -1384,7 +1448,6 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         "CPEI (%)": 'WIP',
         "FPA (\u00b0)": 'WIP',
     }
-    # =====================================================
     
     # Build table rows
     rows = []
@@ -1396,10 +1459,6 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         
     return "DONE", avg_left, avg_right, rows, columns, "tab-3"
         
-
-
-
-
 
 
 # ---------- helpers ----------
@@ -1875,6 +1934,164 @@ def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
     CoP_x, CoP_y = get_CoP(pred_step_data)
     
     return pred_step_data, CoP_x, CoP_y, start_frame_pred, end_frame_pred    
+
+
+#####################
+## TAB 4 CALLBACKS ##
+#####################
+
+# Callback to preview the PDF
+@app.callback(
+    Output("pdf-preview", "src"),
+    Output("pdf-preview", "style"),
+    Output("pdf-preview-note", "children"),
+    Input("refresh-preview", "n_clicks"),
+    Input("patient-info-store", "data"),
+    Input("figure-json-store", "data"),
+    Input("metrics-store", "data"),
+    State("fit-width", "value"),
+    prevent_initial_call=False
+)
+def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_payload, fit):
+    if not patient_info or not fig_json or not metrics_payload:
+        return dash.no_update, dash.no_update, "Waiting for patient info, plot, and metrics..."
+
+    # Build the real PDF bytes
+    try:
+        pdf_bytes = build_pdf_bytes(
+            patient_info=patient_info,
+            fig_json=fig_json,
+            metrics_columns=metrics_payload["columns"],
+            metrics_data=metrics_payload["data"]
+        )
+    except Exception as e:
+        return dash.no_update, dash.no_update, f"Could not render preview: {e}"
+
+    data_url = "data:application/pdf;base64," + base64.b64encode(pdf_bytes).decode()
+
+    # Style switching for fit-width
+    fixed_style = {
+        "width": "816px",
+        "height": "1056px",
+        "border": "1px solid #ccc",
+        "background": "white",
+        "boxShadow": "0 0 8px rgba(0,0,0,0.15)"
+    }
+    fluid_style = {
+        "width": "100%",
+        "height": "calc(100vh - 260px)",  # adjust for your header/controls
+        "border": "1px solid #ccc",
+        "background": "white"
+    }
+    style_out = fluid_style if ("fit" in (fit or [])) else fixed_style
+
+    note = "Preview shows the actual PDF (Letter, 8.5×11 in) with real page breaks and margins."
+    return data_url, style_out, note
+
+def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_data):
+    # Convert Plotly figure to PNG bytes (high-res)
+    fig = go.Figure(**json.loads(fig_json))
+
+    # Match PDF font (Helvetica) and adjust sizes to harmonize
+    fig.update_layout(
+        font=dict(
+            family="Helvetica",   # matches ReportLab default
+            size=18,              # same as ReportLab Normal text
+            color="black"
+        ),
+        
+        title_font=dict(
+            family="Helvetica-Bold",
+            size=22,
+            color="black"
+        ),
+        
+        xaxis=dict(title_font=dict(family="Helvetica", size=18, color="black")),
+        yaxis=dict(title_font=dict(family="Helvetica", size=18, color="black"))
+    )
+    png_bytes = fig.to_image(format="png", scale=1, engine="kaleido")
+
+    # ReportLab doc
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=LETTER,
+        leftMargin=0.25*inch, rightMargin=0.25*inch,
+        topMargin=0.75*inch, bottomMargin=0.75*inch
+    )
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Header
+    title = "Plantar Pressure Report"
+    story.append(Paragraph(title, styles["Title"]))
+    story.append(Paragraph(datetime.now().strftime("Generated on %B %d, %Y %H:%M"), styles["Normal"]))
+    story.append(Spacer(1, 0.25*inch))
+
+    # Patient info block
+    p_rows = [
+        f"<b>Name:</b> {patient_info.get('first_name','')} {patient_info.get('last_name','')}",
+        f"<b>DOB:</b> {patient_info.get('dob','')}",
+        f"<b>Gender:</b> {patient_info.get('gender','')}",
+        f"<b>Assessment Date:</b> {patient_info.get('assessment_date','')}",
+        f"<b>Notes:</b> {patient_info.get('notes','') or '—'}",
+    ]
+    for row in p_rows:
+        story.append(Paragraph(row, styles["Normal"]))
+    story.append(Spacer(1, 0.25*inch))
+
+    # Plot image
+    img = Image(BytesIO(png_bytes))
+    img.drawHeight = 3.2 * inch
+    img.drawWidth = 6.0 * inch
+    story.append(Paragraph("<b>Average Step Pressure Profile</b>", styles["Heading3"]))
+    story.append(img)
+    story.append(Spacer(1, 0.25*inch))
+
+    # Metrics table
+    story.append(Paragraph("<b>Summary Metrics</b>", styles["Heading3"]))
+    table_header = [col["name"] for col in metrics_columns]
+    table_rows = [[row.get(col["id"], "") for col in metrics_columns] for row in metrics_data]
+    table_data = [table_header] + table_rows
+
+    tbl = Table(table_data, hAlign="LEFT")
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("BOX", (0, 0), (-1, -1), 0.6, colors.grey),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("ALIGN", (1, 1), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(tbl)
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+# Callback to generate and download the PDF
+@app.callback(
+    Output("download-pdf", "data"),
+    Input("generate-pdf", "n_clicks"),
+    State("patient-info-store", "data"),
+    State("figure-json-store", "data"),
+    State("metrics-store", "data"),
+    prevent_initial_call=True
+)
+def generate_pdf(n, patient_info, fig_json, metrics_payload):
+    if not patient_info or not fig_json or not metrics_payload:
+        return dash.no_update
+    pdf_bytes = build_pdf_bytes(
+        patient_info=patient_info,
+        fig_json=fig_json,
+        metrics_columns=metrics_payload["columns"],
+        metrics_data=metrics_payload["data"]
+    )
+    filename = f"pressure_report_{patient_info.get('last_name','patient')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    return dcc.send_bytes(pdf_bytes, filename)
 
 
 
