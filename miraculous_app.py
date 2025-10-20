@@ -18,6 +18,7 @@ import math
 import base64
 import json
 from io import BytesIO
+from svglib.svglib import svg2rlg
 from datetime import datetime
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
@@ -291,8 +292,8 @@ tab2 = html.Div([
 tab5 = html.H4("Single Step View")
                   
 tab3 = html.Div([
-    html.Div(dcc.Graph(id="avg-steps-combined", style={"height": 520, "width": "100%"})),
-    html.Div(dcc.Graph(id="avg-pressure-magnitude-combined", style={"height": 520, "width": "100%"})),
+    html.Div(dcc.Graph(id="avg-steps-hm", style={"height": 520, "width": "100%"})),
+    html.Div(dcc.Graph(id="avg-force-mag", style={"height": 520, "width": "100%"})),
     html.Div(
     [
         html.H4("Average Metrics Table", style={"textAlign": "center"}),
@@ -409,7 +410,9 @@ app.layout = html.Div([
     dcc.Store(id="pass-max-z"), # Also add a store to hold the z for the selected pass
     dcc.Store(id="avg-left-data"),
     dcc.Store(id="avg-right-data"),
-    dcc.Store(id="patient-info-store") # This stores the patient info inputted on the first tab
+    dcc.Store(id="patient-info-store"), # This stores the patient info inputted on the first tab
+    dcc.Store(id="avg-steps-json"),
+    dcc.Store(id="avg-force-mag-json") # Storing the figures in json format to be passed between tabs
 ])
 
 
@@ -961,8 +964,10 @@ def get_step_frames(pass_frames, x0, y0, x1, y1, threshold_kPa):
 
 # Callback to display average step heatmaps and average table data
 @app.callback(
-    Output("avg-steps-combined", "figure"),
-    Output("avg-pressure-magnitude-combined", "figure"),
+    Output("avg-steps-hm", "figure"),
+    Output("avg-steps-json", "data"),
+    Output("avg-force-mag", "figure"),
+    Output("avg-force-mag-json", "data"),
     Input("tabs", "value"),
     Input("avg-left-data", "data"),
     Input("avg-right-data", "data"),
@@ -1066,7 +1071,7 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
         tickvals=np.arange(0,101,10),             # positions in pixels
         ticktext=[v * 0.5 for v in np.arange(0,101,10)],  # labels in cm
         autorange="reversed", 
-        scaleanchor="x2",
+        scaleanchor="x2", 
         scaleratio=1,
         row=1, col=2
     )
@@ -1186,8 +1191,86 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
         yanchor="bottom"
         ) 
     )
- 
-    return fig, mag_fig
+        
+    # Updating the format and scaling of the figures for the report PDF
+    fig_copy = go.Figure(fig)
+    report_fig = tune_figure_for_pdf(fig_copy)
+    
+    # Converting each figure to json to be stored for later use
+    avg_steps_json = report_fig.to_json()
+    force_mag_json = mag_fig.to_json()
+    return fig, avg_steps_json, mag_fig, force_mag_json
+
+def tune_figure_for_pdf(fig, content_w_in=12, content_h_in=7, base_font="Helvetica"):
+    """
+    Freeze the figure size and add spacing so legends/titles don't overlap in PDF.
+    content_w_in/h_in = the space you intend on the PDF page (inches).
+    """
+    PT = 72
+    report_fig = fig
+    width_pt  = int(round(content_w_in * PT))
+    height_pt = int(round(content_h_in * PT))
+
+    # Fonts to match your ReportLab styles
+    report_fig.update_layout(
+        width=width_pt,
+        height=height_pt,
+        template="plotly_white",
+        #font=dict(family=base_font, size=17, color="green"),
+        title=dict(
+            font=dict(family=f"{base_font}-Bold", size=12, color="black"),
+            x=0.0, xanchor="left", pad=dict(t=4, b=6, l=0, r=0)
+        ),
+        # Give extra top margin if legend sits above the plot
+        margin=dict(l=60, r=20, t=80, b=60),  # adjust once; stable thereafter
+        paper_bgcolor="white",
+        plot_bgcolor="white"
+    )
+
+    # Axis title/label spacing + auto margins for dense ticks
+    #report_fig.update_xaxes(title_standoff=10, automargin=True)
+    #report_fig.update_yaxes(title_standoff=10, automargin=True)
+    
+    title_font_size = 10
+    axis_font_size = 10
+    
+
+    
+    report_fig.for_each_xaxis(_update_axis)
+    report_fig.for_each_yaxis(_update_axis)
+    
+    anns = list(report_fig.layout.annotations or [])
+    for ann in anns:
+        # Only touch subplot titles (they usually have xref like 'x1', 'x2' and yref like 'paper')
+        ann.font = dict(family=f"{base_font}-Bold", size=17, color="black")
+        # Optional nudge up to avoid crowding the top axis labels
+        if getattr(ann, "yshift", None) in (None, 0):
+            ann.yshift = 8
+    
+    # Legend: put it above the plotting area in a row and leave room via margin.t
+    report_fig.update_layout(
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=-0.27,
+            xanchor="center",  x=0.5,
+            bgcolor="rgba(255,255,255,0)",
+            borderwidth=0,
+            itemwidth=60,          # helps long labels wrap consistently
+            tracegroupgap=8,
+            itemsizing="constant"
+        )
+    )
+    return report_fig
+
+
+
+def _update_axis(ax):
+   ax.update(
+       title_font=dict(family="Helvetica", size=12, color="black"),
+       tickfont=dict(family="Helvetica", size=12, color="black"),
+       title_standoff=10,
+       automargin=True,
+   )
 
 # Callback to get average step metrics and add metrics to average metrics table
 @app.callback(
@@ -1946,23 +2029,27 @@ def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
     Output("pdf-preview", "style"),
     Output("pdf-preview-note", "children"),
     Input("refresh-preview", "n_clicks"),
-    Input("patient-info-store", "data"),
-    Input("figure-json-store", "data"),
-    Input("metrics-store", "data"),
-    State("fit-width", "value"),
+    Input("patient-info-store", "data"), # Good
+    Input("avg-steps-json", "data"), # Good
+    Input("avg-metrics-table", "data"), # Good?
+    State("fit-width", "value"), # Good
     prevent_initial_call=False
 )
-def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_payload, fit):
-    if not patient_info or not fig_json or not metrics_payload:
+def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_table, fit):
+    print("TAB 4 STUFF!")
+    print(patient_info)
+    print()
+    print(metrics_table)
+    if not patient_info or not fig_json or not metrics_table:
         return dash.no_update, dash.no_update, "Waiting for patient info, plot, and metrics..."
-
+    
     # Build the real PDF bytes
     try:
         pdf_bytes = build_pdf_bytes(
             patient_info=patient_info,
             fig_json=fig_json,
-            metrics_columns=metrics_payload["columns"],
-            metrics_data=metrics_payload["data"]
+            #metrics_columns=metrics_table["columns"],
+            #metrics_data=metrics_table["data"]
         )
     except Exception as e:
         return dash.no_update, dash.no_update, f"Could not render preview: {e}"
@@ -1988,7 +2075,7 @@ def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_payload, fit):
     note = "Preview shows the actual PDF (Letter, 8.5×11 in) with real page breaks and margins."
     return data_url, style_out, note
 
-def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_data):
+def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns='', metrics_data=''):
     # Convert Plotly figure to PNG bytes (high-res)
     fig = go.Figure(**json.loads(fig_json))
 
@@ -2006,8 +2093,7 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_
             color="black"
         ),
         
-        xaxis=dict(title_font=dict(family="Helvetica", size=18, color="black")),
-        yaxis=dict(title_font=dict(family="Helvetica", size=18, color="black"))
+
     )
     png_bytes = fig.to_image(format="png", scale=1, engine="kaleido")
 
@@ -2030,23 +2116,32 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_
     # Patient info block
     p_rows = [
         f"<b>Name:</b> {patient_info.get('first_name','')} {patient_info.get('last_name','')}",
-        f"<b>DOB:</b> {patient_info.get('dob','')}",
-        f"<b>Gender:</b> {patient_info.get('gender','')}",
-        f"<b>Assessment Date:</b> {patient_info.get('assessment_date','')}",
-        f"<b>Notes:</b> {patient_info.get('notes','') or '—'}",
+        #f"<b>DOB:</b> {patient_info.get('dob','')}",
+        #f"<b>Gender:</b> {patient_info.get('gender','')}",
+        #f"<b>Assessment Date:</b> {patient_info.get('assessment_date','')}",
+        #f"<b>Notes:</b> {patient_info.get('notes','') or '—'}",
     ]
     for row in p_rows:
         story.append(Paragraph(row, styles["Normal"]))
     story.append(Spacer(1, 0.25*inch))
 
     # Plot image
-    img = Image(BytesIO(png_bytes))
-    img.drawHeight = 3.2 * inch
-    img.drawWidth = 6.0 * inch
+    img = Image(BytesIO(png_bytes)) # svg2rlg(BytesIO(png_bytes))
+    """
+    target_w, target_h = 8.0 * inch, 5.0 * inch
+    sx = target_w / float(img.width)
+    sy = target_h / float(img.height)
+    img.width *= sx
+    img.height *= sy
+    for elem in img.contents:
+        elem.scale(sx, sy)
+    """
+    img.drawHeight = 5 * inch
+    img.drawWidth = 8 * inch
     story.append(Paragraph("<b>Average Step Pressure Profile</b>", styles["Heading3"]))
     story.append(img)
     story.append(Spacer(1, 0.25*inch))
-
+    """
     # Metrics table
     story.append(Paragraph("<b>Summary Metrics</b>", styles["Heading3"]))
     table_header = [col["name"] for col in metrics_columns]
@@ -2066,8 +2161,43 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(tbl)
+    """
+    
+     # --------------- HEADER IMAGES ---------------
+    # Define a small helper function to draw logos at corners
+    def header_logos(canvas, doc):
+        logo_size = 2.0 * inch  # logo width and height
+        page_w, page_h = LETTER
+    
+        # Top-left corner
+        canvas.drawImage(
+            "assets/miraculous.png",     # e.g. "assets/pch_logo.png"
+            x=doc.leftMargin,
+            y=page_h - logo_size + 0.5*inch,   # slightly below top edge
+            width=logo_size,
+            height=logo_size,
+            preserveAspectRatio=True,
+            mask='auto'
+        )
+    
+        # Top-right corner
+        canvas.drawImage(
+            "assets/PCH_Logo.png",    
+            x=page_w - doc.rightMargin - logo_size,
+            y=page_h - logo_size + 0.5*inch,
+            width=logo_size,
+            height=logo_size,
+            preserveAspectRatio=True,
+            mask='auto'
+        )
+        
+        # --- Footer text ---
+        footer_text = datetime.now().strftime("Report generated on %B %d, %Y %H:%M")
+        canvas.setFont("Helvetica", 8)
+        canvas.drawCentredString(LETTER[0] / 2.0, 0.3 * inch, footer_text)
 
-    doc.build(story)
+    
+    doc.build(story, onFirstPage=header_logos, onLaterPages=header_logos)
     buf.seek(0)
     return buf.read()
 

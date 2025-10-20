@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Report tab with live previews + true PDF preview + download.
-Run:
-    python report_generator_with_pdf_preview.py
-"""
-
 import json
 import base64
 from io import BytesIO
@@ -22,6 +15,9 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
+
+from svglib.svglib import svg2rlg
+from reportlab.graphics import renderPDF
 
 
 # ---------------------------------------------------------
@@ -73,6 +69,70 @@ demo_metrics_data = [
 # ---------------------------------------------------------
 # PDF builder (uses ReportLab + Plotly -> PNG via kaleido)
 # ---------------------------------------------------------
+
+def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_data):
+    # 1) Build Plotly fig and set fonts to match PDF (optional but nice)
+    fig = go.Figure(**json.loads(fig_json))
+    fig.update_layout(
+        font=dict(family="Helvetica", size=10, color="black"),
+        title_font=dict(family="Helvetica-Bold", size=12, color="black"),
+        paper_bgcolor="white", plot_bgcolor="white"
+    )
+
+    # 2) Export as SVG (vector)
+    svg_bytes = fig.to_image(format="svg", engine="kaleido")
+
+    # 3) Convert SVG -> ReportLab Drawing
+    drawing = svg2rlg(BytesIO(svg_bytes))
+
+    # 4) Scale drawing to desired size on the page (e.g., 6.0in × 3.2in)
+    target_w, target_h = 9.0 * inch, 7.2 * inch
+    sx = target_w / float(drawing.width)
+    sy = target_h / float(drawing.height)
+    drawing.width *= sx
+    drawing.height *= sy
+    for elem in drawing.contents:
+        elem.scale(sx, sy)
+
+    # --- Rest of your ReportLab build as before ---
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=LETTER,
+        leftMargin=0.75*inch, rightMargin=0.75*inch,
+        topMargin=0.75*inch, bottomMargin=0.75*inch
+    )
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Header + patient block (unchanged) ...
+    story.append(Paragraph("Plantar Pressure Report", styles["Title"]))
+    story.append(Paragraph(datetime.now().strftime("Generated on %B %d, %Y %H:%M"), styles["Normal"]))
+    story.append(Spacer(1, 0.25*inch))
+
+    p_rows = [
+        f"<b>Name:</b> {patient_info.get('first_name','')} {patient_info.get('last_name','')}",
+        f"<b>DOB:</b> {patient_info.get('dob','')}",
+        f"<b>Gender:</b> {patient_info.get('gender','')}",
+        f"<b>Assessment Date:</b> {patient_info.get('assessment_date','')}",
+        f"<b>Notes:</b> {patient_info.get('notes','') or '—'}",
+    ]
+    for row in p_rows:
+        story.append(Paragraph(row, styles["Normal"]))
+    story.append(Spacer(1, 0.25*inch))
+
+    # ▶ Inline vector figure
+    story.append(Paragraph("<b>Average Step Pressure Profile</b>", styles["Heading3"]))
+    story.append(drawing)  # Drawing is a valid Flowable
+    story.append(Spacer(1, 0.25*inch))
+
+    # Metrics table (unchanged) ...
+    # build table_data, style, etc.
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+"""
 def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_data):
     # Convert Plotly figure to PNG bytes (high-res)
     fig = go.Figure(**json.loads(fig_json))
@@ -94,7 +154,7 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_
         xaxis=dict(title_font=dict(family="Helvetica", size=18, color="black")),
         yaxis=dict(title_font=dict(family="Helvetica", size=18, color="black"))
     )
-    png_bytes = fig.to_image(format="png", scale=1, engine="kaleido")
+    png_bytes = fig.to_image(format="svg", scale=1, engine="kaleido")
 
     # ReportLab doc
     buf = BytesIO()
@@ -155,7 +215,7 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns, metrics_
     doc.build(story)
     buf.seek(0)
     return buf.read()
-
+"""
 
 # ---------------------------------------------------------
 # Dash app
@@ -305,7 +365,7 @@ def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_payload, fit):
             metrics_data=metrics_payload["data"]
         )
     except Exception as e:
-        return dash.no_update, dash.no_update, f"Could not render preview: {e}"
+        return dash.no_update, dash.no_update, f"Could not      preview: {e}"
 
     data_url = "data:application/pdf;base64," + base64.b64encode(pdf_bytes).decode()
 
