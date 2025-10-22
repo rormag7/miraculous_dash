@@ -3,7 +3,6 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import numpy as np
 import dash
 from dash import dcc, html, Input, Output, State, ctx, dash_table
-#from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -17,14 +16,17 @@ import pandas as pd
 import math
 import base64
 import json
+#import io
 from io import BytesIO
+from flask import send_file
 from svglib.svglib import svg2rlg
 from datetime import datetime
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
 from sklearn.decomposition import PCA
 from scipy import ndimage as ndi
 from ultralytics import YOLO
@@ -1101,7 +1103,7 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
     left_mag_x = np.linspace(0, 100, len(left_avg_mag))  # left step cycle percentage
     right_mag_x = np.linspace(0, 100, len(right_avg_mag)) # right step cycle percentage
     
-    init_thresh = 75  # initial line value
+    init_thresh = 100  # initial line value
     
     mag_fig = go.Figure()
     
@@ -1251,7 +1253,7 @@ def tune_figure_for_pdf(fig, content_w_in=12, content_h_in=7, base_font="Helveti
     report_fig.update_layout(
         legend=dict(
             orientation="h",
-            yanchor="bottom", y=-0.27,
+            yanchor="bottom", y=-0.23,
             xanchor="center",  x=0.5,
             bgcolor="rgba(255,255,255,0)",
             borderwidth=0,
@@ -2048,6 +2050,7 @@ def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_table, fit):
         pdf_bytes = build_pdf_bytes(
             patient_info=patient_info,
             fig_json=fig_json,
+            metrics_table=metrics_table
             #metrics_columns=metrics_table["columns"],
             #metrics_data=metrics_table["data"]
         )
@@ -2075,7 +2078,7 @@ def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_table, fit):
     note = "Preview shows the actual PDF (Letter, 8.5×11 in) with real page breaks and margins."
     return data_url, style_out, note
 
-def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns='', metrics_data=''):
+def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_table):
     # Convert Plotly figure to PNG bytes (high-res)
     fig = go.Figure(**json.loads(fig_json))
 
@@ -2110,20 +2113,38 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns='', metri
     # Header
     title = "Plantar Pressure Report"
     story.append(Paragraph(title, styles["Title"]))
-    story.append(Paragraph(datetime.now().strftime("Generated on %B %d, %Y %H:%M"), styles["Normal"]))
     story.append(Spacer(1, 0.25*inch))
 
+
+    two_col_style = ParagraphStyle(
+    "TwoCol",
+    fontName="Helvetica",
+    fontSize=9,
+    leading=12,
+    leftIndent=0,
+    tabs=[(3.2*inch, "left")]  # 2nd column starts 3.2in from left margin
+    )
     # Patient info block
     p_rows = [
-        f"<b>Name:</b> {patient_info.get('first_name','')} {patient_info.get('last_name','')}",
-        #f"<b>DOB:</b> {patient_info.get('dob','')}",
-        #f"<b>Gender:</b> {patient_info.get('gender','')}",
-        #f"<b>Assessment Date:</b> {patient_info.get('assessment_date','')}",
-        #f"<b>Notes:</b> {patient_info.get('notes','') or '—'}",
+        f"<b>Name:</b> {patient_info.get('first_name','')} {patient_info.get('last_name','')}\t<b>Birth Date:</b> {patient_info.get('birth_date','')}",
+        f"\t<b>Birth Date:</b> {patient_info.get('birth_date','')}",
+        f"<b>Sex:</b> {patient_info.get('sex','')}",
+        f"<b>Bodyweight:</b> {patient_info.get('body_weight','') or ''}N",
+        f"<b>Assessment Date:</b> {patient_info.get('assessment_date','')}",
+        f"<b>Pathology:</b> {patient_info.get('pathology','') or ''}",
+        f"<b>Recording Type:</b> {patient_info.get('recording_type','') or ''}",
+        f"<b>Project:</b> {patient_info.get('project','') or ''}",
+        f"<b>Notes:</b> {patient_info.get('notes','') or ''}",
     ]
+    
+    story.append(Paragraph(
+    "<b>Name:</b> Alex Smith\t<b>Date of Birth:</b> 2001-05-12",
+    two_col_style
+    ))
+    
     for row in p_rows:
-        story.append(Paragraph(row, styles["Normal"]))
-    story.append(Spacer(1, 0.25*inch))
+        story.append(Paragraph(row, two_col_style))
+    #story.append(Spacer(1, 0.25*inch))
 
     # Plot image
     img = Image(BytesIO(png_bytes)) # svg2rlg(BytesIO(png_bytes))
@@ -2138,16 +2159,20 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns='', metri
     """
     img.drawHeight = 5 * inch
     img.drawWidth = 8 * inch
-    story.append(Paragraph("<b>Average Step Pressure Profile</b>", styles["Heading3"]))
+    #story.append(Paragraph("<b>Average Step Pressure Profile</b>", styles["Heading3"]))
     story.append(img)
     story.append(Spacer(1, 0.25*inch))
-    """
+    
     # Metrics table
     story.append(Paragraph("<b>Summary Metrics</b>", styles["Heading3"]))
-    table_header = [col["name"] for col in metrics_columns]
-    table_rows = [[row.get(col["id"], "") for col in metrics_columns] for row in metrics_data]
+    table_header = list(metrics_table[0].keys())
+    #table_header = [col["name"] for col in metrics_columns]
+    table_rows = [list(side.values()) for side in metrics_table]
+    print(table_header)
+    print(table_rows)
+    #table_rows = [[row.get(col["id"], "") for col in metrics_columns] for row in metrics_data]
     table_data = [table_header] + table_rows
-
+    
     tbl = Table(table_data, hAlign="LEFT")
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
@@ -2161,19 +2186,19 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns='', metri
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(tbl)
-    """
+    
     
      # --------------- HEADER IMAGES ---------------
     # Define a small helper function to draw logos at corners
     def header_logos(canvas, doc):
-        logo_size = 2.0 * inch  # logo width and height
+        logo_size = 2.3 * inch  # logo width and height
         page_w, page_h = LETTER
     
         # Top-left corner
         canvas.drawImage(
             "assets/miraculous.png",     # e.g. "assets/pch_logo.png"
             x=doc.leftMargin,
-            y=page_h - logo_size + 0.5*inch,   # slightly below top edge
+            y=page_h - logo_size + 0.7*inch,   # slightly below top edge
             width=logo_size,
             height=logo_size,
             preserveAspectRatio=True,
@@ -2184,7 +2209,7 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_columns='', metri
         canvas.drawImage(
             "assets/PCH_Logo.png",    
             x=page_w - doc.rightMargin - logo_size,
-            y=page_h - logo_size + 0.5*inch,
+            y=page_h - logo_size + 0.7*inch,
             width=logo_size,
             height=logo_size,
             preserveAspectRatio=True,
