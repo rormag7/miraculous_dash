@@ -980,7 +980,7 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
     if tab != "tab-3" or not left_data or not right_data:
         raise dash.exceptions.PreventUpdate
     
-    # Unpack → allow different shapes
+    # Unpack
     hm_l = np.asarray(left_data["avg_heatmap"])
     cx_l = left_data["avg_cop"]["x"]
     cy_l = left_data["avg_cop"]["y"]
@@ -1198,12 +1198,15 @@ def create_avg_figs(tab, left_data, right_data, patient_info):
     fig_copy = go.Figure(fig)
     report_fig = tune_figure_for_pdf(fig_copy)
     
+    mag_fig_copy = go.Figure(mag_fig)
+    report_mag_fig = tune_figure_for_pdf(mag_fig_copy,12,4,-1)
+    
     # Converting each figure to json to be stored for later use
     avg_steps_json = report_fig.to_json()
-    force_mag_json = mag_fig.to_json()
+    force_mag_json = report_mag_fig.to_json()
     return fig, avg_steps_json, mag_fig, force_mag_json
 
-def tune_figure_for_pdf(fig, content_w_in=12, content_h_in=7, base_font="Helvetica"):
+def tune_figure_for_pdf(fig, content_w_in=12, content_h_in=7, legend_y=-.23, base_font="Helvetica"):
     """
     Freeze the figure size and add spacing so legends/titles don't overlap in PDF.
     content_w_in/h_in = the space you intend on the PDF page (inches).
@@ -1253,11 +1256,11 @@ def tune_figure_for_pdf(fig, content_w_in=12, content_h_in=7, base_font="Helveti
     report_fig.update_layout(
         legend=dict(
             orientation="h",
-            yanchor="bottom", y=-0.23,
+            yanchor="bottom", y=legend_y,
             xanchor="center",  x=0.5,
             bgcolor="rgba(255,255,255,0)",
             borderwidth=0,
-            itemwidth=60,          # helps long labels wrap consistently
+            itemwidth=80,         # helps long labels wrap consistently
             tracegroupgap=8,
             itemsizing="constant"
         )
@@ -1324,7 +1327,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             plt.show()
             
             #Plotting the total pressure magnitude per step frames
-            # Each sensor is .000025m^2 and the original pressure is in kPa, so multiplying out to get force: F = P*A
+            # Each sensor is .000025m^2 and the original pressure is in kPa, so multiplying out to get force in Newtons: F = P*A
             step_frame_force_magnitude = ((1000*.000025)*box['original_step_frames'][:]).sum(axis=(1, 2))
             plt.plot(range(len(step_frame_force_magnitude)), step_frame_force_magnitude)
             plt.title('Force Magnitude (N)')
@@ -2031,13 +2034,14 @@ def get_step_frames_and_CoP(step_info, pass_data, threshold_kPa):
     Output("pdf-preview", "style"),
     Output("pdf-preview-note", "children"),
     Input("refresh-preview", "n_clicks"),
-    Input("patient-info-store", "data"), # Good
-    Input("avg-steps-json", "data"), # Good
-    Input("avg-metrics-table", "data"), # Good?
-    State("fit-width", "value"), # Good
+    Input("patient-info-store", "data"),
+    Input("avg-steps-json", "data"),
+    Input("avg-force-mag-json", "data"),
+    Input("avg-metrics-table", "data"),
+    State("fit-width", "value"),
     prevent_initial_call=False
 )
-def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_table, fit):
+def update_pdf_preview(_n_clicks, patient_info, fig_json, fig2_json, metrics_table, fit):
     print("TAB 4 STUFF!")
     print(patient_info)
     print()
@@ -2050,9 +2054,9 @@ def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_table, fit):
         pdf_bytes = build_pdf_bytes(
             patient_info=patient_info,
             fig_json=fig_json,
+            fig2_json=fig2_json,
             metrics_table=metrics_table
-            #metrics_columns=metrics_table["columns"],
-            #metrics_data=metrics_table["data"]
+
         )
     except Exception as e:
         return dash.no_update, dash.no_update, f"Could not render preview: {e}"
@@ -2078,9 +2082,11 @@ def update_pdf_preview(_n_clicks, patient_info, fig_json, metrics_table, fit):
     note = "Preview shows the actual PDF (Letter, 8.5×11 in) with real page breaks and margins."
     return data_url, style_out, note
 
-def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_table):
+def build_pdf_bytes(patient_info, fig_json, fig2_json, metrics_table):
     # Convert Plotly figure to PNG bytes (high-res)
     fig = go.Figure(**json.loads(fig_json))
+    fig2 = go.Figure(**json.loads(fig2_json))
+    
 
     # Match PDF font (Helvetica) and adjust sizes to harmonize
     fig.update_layout(
@@ -2099,6 +2105,25 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_table):
 
     )
     png_bytes = fig.to_image(format="png", scale=1, engine="kaleido")
+    
+    
+    # Match PDF font (Helvetica) and adjust sizes to harmonize
+    fig2.update_layout(
+        font=dict(
+            family="Helvetica",   # matches ReportLab default
+            size=18,              # same as ReportLab Normal text
+            color="black"
+        ),
+        
+        title_font=dict(
+            family="Helvetica-Bold",
+            size=22,
+            color="black"
+        ),
+        
+
+    )
+    png2_bytes = fig2.to_image(format="png", scale=1, engine="kaleido")
 
     # ReportLab doc
     buf = BytesIO()
@@ -2114,40 +2139,16 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_table):
     title = "Plantar Pressure Report"
     story.append(Paragraph(title, styles["Title"]))
     story.append(Spacer(1, 0.25*inch))
-
-
-    two_col_style = ParagraphStyle(
-    "TwoCol",
-    fontName="Helvetica",
-    fontSize=9,
-    leading=12,
-    leftIndent=0,
-    tabs=[(3.2*inch, "left")]  # 2nd column starts 3.2in from left margin
-    )
-    # Patient info block
-    p_rows = [
-        f"<b>Name:</b> {patient_info.get('first_name','')} {patient_info.get('last_name','')}\t<b>Birth Date:</b> {patient_info.get('birth_date','')}",
-        f"\t<b>Birth Date:</b> {patient_info.get('birth_date','')}",
-        f"<b>Sex:</b> {patient_info.get('sex','')}",
-        f"<b>Bodyweight:</b> {patient_info.get('body_weight','') or ''}N",
-        f"<b>Assessment Date:</b> {patient_info.get('assessment_date','')}",
-        f"<b>Pathology:</b> {patient_info.get('pathology','') or ''}",
-        f"<b>Recording Type:</b> {patient_info.get('recording_type','') or ''}",
-        f"<b>Project:</b> {patient_info.get('project','') or ''}",
-        f"<b>Notes:</b> {patient_info.get('notes','') or ''}",
-    ]
     
-    story.append(Paragraph(
-    "<b>Name:</b> Alex Smith\t<b>Date of Birth:</b> 2001-05-12",
-    two_col_style
-    ))
+
+    available_width = doc.width  # from your SimpleDocTemplate/BaseDocTemplate
+    patient_table = make_two_up_info_table(patient_info, doc_width=available_width, gutter=0.25*inch)
+    story.append(patient_table)
     
-    for row in p_rows:
-        story.append(Paragraph(row, two_col_style))
-    #story.append(Spacer(1, 0.25*inch))
 
     # Plot image
     img = Image(BytesIO(png_bytes)) # svg2rlg(BytesIO(png_bytes))
+    img2 = Image(BytesIO(png2_bytes))
     """
     target_w, target_h = 8.0 * inch, 5.0 * inch
     sx = target_w / float(img.width)
@@ -2159,8 +2160,10 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_table):
     """
     img.drawHeight = 5 * inch
     img.drawWidth = 8 * inch
-    #story.append(Paragraph("<b>Average Step Pressure Profile</b>", styles["Heading3"]))
+    img2.drawHeight = 8/3 * inch
+    img2.drawWidth = 8 * inch
     story.append(img)
+    story.append(img2)
     story.append(Spacer(1, 0.25*inch))
     
     # Metrics table
@@ -2204,7 +2207,7 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_table):
             preserveAspectRatio=True,
             mask='auto'
         )
-    
+        """
         # Top-right corner
         canvas.drawImage(
             "assets/PCH_Logo.png",    
@@ -2215,7 +2218,7 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_table):
             preserveAspectRatio=True,
             mask='auto'
         )
-        
+        """
         # --- Footer text ---
         footer_text = datetime.now().strftime("Report generated on %B %d, %Y %H:%M")
         canvas.setFont("Helvetica", 8)
@@ -2226,6 +2229,59 @@ def build_pdf_bytes(patient_info: dict, fig_json: str, metrics_table):
     buf.seek(0)
     return buf.read()
 
+# New 11/4
+def make_two_up_info_table(info_dict, doc_width, gutter=0.25*inch,
+                           font_name="Helvetica", font_size=9):
+    """
+    Create a 2-up (two items per row) patient info block with no visible grid.
+    Each cell shows 'Label: Value' as a Paragraph, wrapping as needed.
+    - info_dict: ordered dict-like (insertion order respected)
+    - doc_width: available width on the page (use doc.width)
+    - gutter: space between the two columns
+    """
+    styles = getSampleStyleSheet()
+    cell_style = ParagraphStyle(
+        "info_cell",
+        parent=styles["Normal"],
+        fontName=font_name,
+        fontSize=font_size,
+        leading=font_size + 2,
+        spaceBefore=0, spaceAfter=0
+    )
+
+    # Compute two equal column widths with a gutter in between
+    col_w = (doc_width - gutter) / 2.0
+    col_widths = [col_w, col_w]
+
+    # Turn key/value pairs into rows of two cells
+    items = list(info_dict.items())
+    rows = []
+    for i in range(0, len(items), 2):
+        left_k, left_v = items[i]
+        left_p = Paragraph(f"<b>{left_k}:</b> {'' if left_v is None else left_v}", cell_style)
+
+        if i + 1 < len(items):
+            right_k, right_v = items[i+1]
+            right_p = Paragraph(f"<b>{right_k}:</b> {'' if right_v is None else right_v}", cell_style)
+        else:
+            right_p = Paragraph("", cell_style)
+
+        rows.append([left_p, right_p])
+
+    tbl = Table(rows, colWidths=col_widths, spaceBefore=0, spaceAfter=0)
+
+    # Invisible table: zero paddings, no lines; keep text aligned & tidy
+    tbl.setStyle(TableStyle([
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 1),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 1),
+        # No GRID/BORDER rules → visually invisible
+    ]))
+
+    return tbl
 
 # Callback to generate and download the PDF
 @app.callback(
