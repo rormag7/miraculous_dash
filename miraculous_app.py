@@ -18,6 +18,7 @@ import base64
 import json
 #import io
 from io import BytesIO
+from pathlib import Path
 from flask import send_file
 from svglib.svglib import svg2rlg
 from datetime import datetime
@@ -26,7 +27,6 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-
 from sklearn.decomposition import PCA
 from scipy import ndimage as ndi
 from ultralytics import YOLO
@@ -67,9 +67,43 @@ trial_frames = np.rot90(trial_frames, k=1, axes=(1, 2))
 num_frames = trial_frames.shape[0]
 zmax_val = float(np.max(trial_frames))
 marks = {0: "Start", num_frames - 1: "End"}
+"""
+initial_pathology_options = [
+    {"label": "Cerebral Palsy", "value": "Cerebral Palsy"},
+    {"label": "Club Foot", "value": "Club Foot"},
+    {"label": "ACL Pre Op", "value": "ACL Pre Op"},
+    {"label": "ACL Post Op", "value": "ACL Post Op"},
+    {"label": "NA", "value": "NA"},
+]
+initial_project_options = [
+    {"label": "Markerless Integration Study", "value": "Markerless Integration Study"},
+    {"label": "Club Foot Correction Project", "value": "Club Foot Correction Project"},
+    {"label": "ACL Rehab Project", "value": "ACL Rehab Project"},
+    {"label": "NA", "value": "NA"},
+]
+"""
+# initial project and pathology options are stored in this file
+dropdown_filename ="dropdown_values.csv"
 
+pathology_list = []
+project_list = []
 
+with open(dropdown_filename, mode='r', newline='') as file:
+    # Create a CSV reader object
+    csv_reader = csv.reader(file)
 
+    # Skipping header row
+    next(csv_reader)
+
+    # Iterate over each row in the CSV file
+    for row in csv_reader:
+        if row[0] == "Pathology":
+            pathology_list.append(row[1])
+        else:
+           project_list.append(row[1])
+
+initial_pathology_options = [{"label": pathology, "value": pathology} for pathology in pathology_list]
+initial_project_options = [{"label": project, "value": project} for project in project_list]
 
 #####################
 ##   TAB LAYOUTS   ##
@@ -168,32 +202,30 @@ tab1 = html.Div([
                             html.Label("Pathology: ", style={"marginRight": "10px"}),
                             dcc.Dropdown(
                                 id="pathology",
-                                options=[
-                                    {"label": "Cerebral Palsy", "value": "Cerebral Palsy"},
-                                    {"label": "Club Foot", "value": "Club Foot"},
-                                    {"label": "ACL Pre Op", "value": "ACL Pre Op"},
-                                    {"label": "ACL Post Op", "value": "ACL Post Op"},
-                                    {"label": "NA", "value": "NA"},
-                                ],
-                                placeholder="Select pathology",
+                                options=initial_pathology_options,
+                                searchable=True, 
+                                value=None,
+                                placeholder="Type to search…",
                                 style={"width": "150px"}
-                            )
-                        ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
+                            ),
+                            html.Button("Add this as new option", id="add-pathology", n_clicks=0, style={"marginLeft": 7}),
+                            dcc.Store(id="new-pathology-option", data=""), 
+                            dcc.Store(id="pathology-options-store", data=initial_pathology_options),
+                        ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"},),
 
     
                     html.Div([
                               html.Label("Project: ", style={"marginRight": "10px"}),
                               dcc.Dropdown(
                                   id="project",
-                                  options=[
-                                      {"label": "Markerless Integration Study", "value": "Markerless Integration Study"},
-                                      {"label": "Club Foot Correction Project", "value": "Club Foot Correction Project"},
-                                      {"label": "ACL Rehab Project", "value": "ACL Rehab Project"},
-                                      {"label": "NA", "value": "NA"},
-                                  ],
-                                  placeholder="Select project",
+                                  options=initial_project_options,
+                                  searchable=True,  
+                                  placeholder="Type to search…",
                                   style={"width": "150px"}
-                              )
+                              ),
+                              html.Button("Add this as new option", id="add-project", n_clicks=0, style={"marginLeft": 7}),
+                              dcc.Store(id="new-project-option", data=""), 
+                              dcc.Store(id="project-options-store", data=initial_project_options),
                           ], style={"display": "flex", "alignItems": "center", "marginTop": "10px"}),
     
 
@@ -371,7 +403,7 @@ tab4 = html.Div([
                 type="default"
             ),
             html.Div(id="pdf-preview-note",
-                     style={"color": "#666", "fontSize": "12px", "marginTop": "6px"}),
+                     style={"color": "#667", "fontSize": "12px", "marginTop": "6px"}), #originally 667-1
         ],
         style={"padding": "16px"}
     )
@@ -516,7 +548,7 @@ def update_pass_table(add_clicks, remove_clicks, table_data):
     return table_data, ""
 
 @app.callback(
-    Output("processing-complete-message", "children", allow_duplicate=True), #true
+    Output("processing-complete-message", "children", allow_duplicate=True),
     Output("shared-pass-table", "data", allow_duplicate=True),
     Output("pass-max-dict", "data", allow_duplicate=True),
     Output("bbox-info-dict", "data", allow_duplicate=True),
@@ -529,7 +561,7 @@ def process_passes(process_clicks, table_data):
     # Only run on a real click of the button
     if not process_clicks or ctx.triggered_id != "process-passes":
         raise dash.exceptions.PreventUpdate
-        
+    print('running?')
     trial_dir = trial_name
     trial_info_path = f'{trial_dir}/trial_information.csv'
     trial_fieldnames=['pass_idx', 'start_frame', 'end_frame']
@@ -652,14 +684,121 @@ def save_patient_info(n_clicks, first_name, last_name, sex, body_weight,
     save_message = "Patient information successfully saved."
     return patient_data, save_message
 
+# Callbacks to add new pathology
+@app.callback(
+    Output("new-pathology-option", "data"),
+    Input("pathology", "search_value"),
+    prevent_initial_call=True
+)
+def cache_pathology_search_text(s):
+    if not s:
+        # nothing typed → no changes
+        return dash.no_update
+    return (s or "").strip()
+
+@app.callback(
+    Output("pathology-options-store", "data"),
+    Output("pathology", "value"),
+    Input("add-pathology", "n_clicks"),
+    State("new-pathology-option", "data"),
+    State("pathology-options-store", "data"),
+    prevent_initial_call=True
+)
+def add_pathology_option(n_clicks, typed, stored_options):
+    text = (typed or "").strip()
+    print(f'New pathology added: {text}')
+    if not text:
+        # nothing typed → no changes
+        return stored_options, dash.no_update
+
+    # case-insensitive de-duplication
+    existing_lower = {opt["value"].lower() for opt in stored_options}
+    if text.lower() in existing_lower:
+        # already exists → just select it
+        return stored_options, text
+
+    new_opt = {"label": text, "value": text}
+    updated = stored_options + [new_opt]
+    
+    # Adding to CSV
+    with open(dropdown_filename, 'a', newline='', encoding='utf-8') as csvfile:
+        # Create a CSV writer object
+        csv_writer = csv.writer(csvfile)
+
+        csv_writer.writerow(['Pathology',text])
+        
+    return updated, text
+
+# 3) Keep the dropdown options in sync with the canonical store
+@app.callback(
+    Output("pathology", "options"),
+    Input("pathology-options-store", "data")
+)
+def sync_patholgy_options(pathology_data):
+    return pathology_data
+
+
+# Callbacks to add new project
+@app.callback(
+    Output("new-project-option", "data"),
+    Input("project", "search_value"),
+    prevent_initial_call=True
+)
+def cache_project_search_text(s):
+    if not s:
+        # nothing typed → no changes
+        return dash.no_update
+    return (s or "").strip()
+
+@app.callback(
+    Output("project-options-store", "data"),
+    Output("project", "value"),
+    Input("add-project", "n_clicks"),
+    State("new-project-option", "data"),
+    State("project-options-store", "data"),
+    prevent_initial_call=True
+)
+def add_project_option(n_clicks, typed, stored_options):
+    text = (typed or "").strip()
+    print(f'New project added: {text}')
+    if not text:
+        # nothing typed → no changes
+        return stored_options, dash.no_update
+
+    # case-insensitive de-duplication
+    existing_lower = {opt["value"].lower() for opt in stored_options}
+    if text.lower() in existing_lower:
+        # already exists → just select it
+        return stored_options, text
+
+    new_opt = {"label": text, "value": text}
+    updated = stored_options + [new_opt]
+    
+    # Adding to CSV
+    with open(dropdown_filename, 'a', newline='', encoding='utf-8') as csvfile:
+        # Create a CSV writer object
+        csv_writer = csv.writer(csvfile)
+
+        csv_writer.writerow(['Project',text])
+    return updated, text
+
+# 3) Keep the dropdown options in sync with the canonical store
+@app.callback(
+    Output("project", "options"),
+    Input("project-options-store", "data")
+)
+def sync_project_options(project_data):
+    return project_data
+
 #####################
 ## TAB 2 CALLBACKS ##
 #####################
 @app.callback(
     Output('passes-dropdown', 'children'), # Output component and property
-    Input("shared-pass-table", "data")
+    Input("shared-pass-table", "data"),
 )
 def create_pass_dropdown(pass_table_data):
+    print(f'PASS TABLE DATA: {pass_table_data}')
     dropdown_list = []
     for pass_row in pass_table_data:
         pass_idx = pass_row['pass_idx']
