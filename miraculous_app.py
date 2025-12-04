@@ -359,14 +359,9 @@ tab3 = html.Div([
 
 tab4 = html.Div([
     html.H4("Preview and Generate report PDF"),
-    html.P("Dropdown for trial std or normative range?"),
-    html.P("Dropdown to change color of metric value in the table based on if it is high, low, or in range?"),
-    html.P("Specify file name and save location? This may be have a default based on pathology and research project but can be changed"),
-    html.Div(
+   html.Div(
         [
-            html.Div(
-                [html.Button("Generate PDF", id="generate-pdf", n_clicks=0, style={"marginTop": "16px"})],
-            ),
+
             dcc.Download(id="download-pdf"),
 
             html.Hr(),
@@ -2306,6 +2301,7 @@ def build_pdf_bytes(patient_info, fig_json, fig2_json, metrics_table):
     story.append(Spacer(1, 0.25*inch))
     
     # Metrics table
+    """
     story.append(Paragraph("<b>Summary Metrics</b>", styles["Heading3"]))
     table_header = list(metrics_table[0].keys())
     #table_header = [col["name"] for col in metrics_columns]
@@ -2328,7 +2324,7 @@ def build_pdf_bytes(patient_info, fig_json, fig2_json, metrics_table):
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(tbl)
-    
+    """
     
      # --------------- HEADER IMAGES ---------------
     # Define a small helper function to draw logos at corners
@@ -2406,7 +2402,7 @@ def make_two_up_info_table(info_dict, doc_width, gutter=0.25*inch,
             right_p = Paragraph("", cell_style)
 
         rows.append([left_p, right_p])
-
+    
     tbl = Table(rows, colWidths=col_widths, spaceBefore=0, spaceAfter=0)
 
     # Invisible table: zero paddings, no lines; keep text aligned & tidy
@@ -2428,17 +2424,17 @@ def make_two_up_info_table(info_dict, doc_width, gutter=0.25*inch,
     Input("generate-pdf", "n_clicks"),
     State("patient-info-store", "data"),
     State("figure-json-store", "data"),
-    State("metrics-store", "data"),
+    #State("metrics-store", "data"),
     prevent_initial_call=True
 )
-def generate_pdf(n, patient_info, fig_json, metrics_payload):
-    if not patient_info or not fig_json or not metrics_payload:
+def generate_pdf(n, patient_info, fig_json): # pip install pomegranate==0.15.0
+    if not patient_info or not fig_json: #or not metrics_payload:
         return dash.no_update
     pdf_bytes = build_pdf_bytes(
         patient_info=patient_info,
         fig_json=fig_json,
-        metrics_columns=metrics_payload["columns"],
-        metrics_data=metrics_payload["data"]
+        #metrics_columns=metrics_payload["columns"],
+       # metrics_data=metrics_payload["data"]
     )
     filename = f"pressure_report_{patient_info.get('last_name','patient')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     return dcc.send_bytes(pdf_bytes, filename)
