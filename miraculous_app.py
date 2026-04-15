@@ -2206,7 +2206,7 @@ def update_pdf_preview(_n_clicks, patient_info, fig_json, fig2_json, metrics_tab
     }
     fluid_style = {
         "width": "100%",
-        "height": "calc(100vh - 260px)",  # adjust for your header/controls
+        "height": "calc(100vh - 260px)",  # adjust for header/controls
         "border": "1px solid #ccc",
         "background": "white"
     }
@@ -2299,7 +2299,7 @@ def build_pdf_bytes(patient_info, fig_json, fig2_json, metrics_table):
     story.append(img2)
     story.append(Spacer(1, 0.25*inch))
     
-    # Metrics table
+    # Metrics table WIP
     """
     story.append(Paragraph("<b>Summary Metrics</b>", styles["Heading3"]))
     table_header = list(metrics_table[0].keys())
@@ -2363,7 +2363,6 @@ def build_pdf_bytes(patient_info, fig_json, fig2_json, metrics_table):
     buf.seek(0)
     return buf.read()
 
-# New 11/4
 def make_two_up_info_table(info_dict, doc_width, gutter=0.25*inch,
                            font_name="Helvetica", font_size=9):
     """
