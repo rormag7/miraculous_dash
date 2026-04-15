@@ -16,7 +16,6 @@ import pandas as pd
 import math
 import base64
 import json
-#import io
 from io import BytesIO
 from pathlib import Path
 from flask import send_file
@@ -30,7 +29,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from sklearn.decomposition import PCA
 from scipy import ndimage as ndi
 from ultralytics import YOLO
-step_identification_model_l = YOLO(r'C:\Users\rorym\Downloads\FALL 2025\Applied Project\Code\Model_Weights\Step_Identification\yolov8l_best.pt')  # Loading best trained model
+step_identification_model_l = YOLO(r'model_weights\yolov8l_best.pt')  # Loading best trained model
 
 # Create Jet colormap and force value 0 to be black
 jet = mpl.colormaps['jet'](np.linspace(0, 1, 256))
