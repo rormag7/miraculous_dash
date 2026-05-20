@@ -168,14 +168,3 @@ Project,ACL Rehab Project
 | `flask` | File serving |
 | `kaleido` | Static Plotly image export |
 
----
-
-## License
-
-*Add your license here.*
-
----
-
-## Acknowledgements
-
-Developed at Phoenix Children's Hospital. Logo and branding assets located in the `assets/` directory.
