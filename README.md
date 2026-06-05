@@ -1,6 +1,6 @@
 # Miraculous – Plantar Pressure Analysis Tool
 
-!\[Miraculous Logo](assets/miraculous.png)
+![Miraculous Logo](assets/miraculous.png)
 
 Miraculous is an interactive, web-based application for analyzing plantar pressure data. Built with Python and Plotly Dash, it provides a full analysis pipeline — from raw pressure recordings through step identification, biomechanical metric computation, and PDF report generation — all within a clean, browser-based interface.
 
@@ -23,21 +23,21 @@ Miraculous is an interactive, web-based application for analyzing plantar pressu
 
 ```
 .
-├── miraculous\_app.py          # Main application — all UI and logic
-├── dropdown\_values.csv        # Persistent pathology and project dropdown options
+├── miraculous_app.py          # Main application — all UI and logic
+├── dropdown_values.csv        # Persistent pathology and project dropdown options
 ├── assets/
 │   ├── miraculous.png         # App logo
-│   └── PCH\_Logo.png           # Institution logo (used in reports)
+│   └── PCH_Logo.png           # Institution logo (used in reports)
 ├── model\_weights/
-│   └── yolov8l\_best.pt        # Trained YOLOv8-Large step identification model
-├── S115\_W1\_P1.npz             # Sample trial data files
-├── S120\_W1.npz
-├── S133\_W1.npz
-├── S140\_W1.npz
-├── S140\_W1\_1.npz
-├── S145\_W1.npz
-├── S30\_W1.npz
-└── S33\_W1.npz
+│   └── yolov8l_best.pt        # Trained YOLOv8-Large step identification model
+├── S115_W1_P1.npz             # Sample trial data files
+├── S120_W1.npz
+├── S133_W1.npz
+├── S140_W1.npz
+├── S140_W1_1.npz
+├── S145_W1.npz
+├── S30_W1.npz
+└── S33_W1.npz
 ```
 
 Output directories are created automatically at runtime:
@@ -45,8 +45,8 @@ Output directories are created automatically at runtime:
 ```
 <trial\_name>/
 └── Pass<N>/
-    ├── <trial>\_Pass<N>\_image.png        # Max-pressure heatmap image
-    ├── <trial>\_Pass<N>\_predictions.csv  # Step bounding box predictions
+    ├── <trial>_Pass<N>_image.png        # Max-pressure heatmap image
+    ├── <trial>_Pass<N>_predictions.csv  # Step bounding box predictions
     └── predict/                         # YOLO annotated output images
 ```
 
@@ -57,12 +57,12 @@ Output directories are created automatically at runtime:
 Miraculous reads trial data from `.npz` files. Each file should contain a single array (accessed as `arr\_0`) with shape:
 
 ```
-(num\_frames, rows, cols)
+(num_frames, rows, cols)
 ```
 
 where each frame is a 2D pressure matrix (pressure values in kPa). The application assumes a sample rate of **100 Hz** and a sensor tile size of **0.5 cm**.
 
-Sample `.npz` files for several subjects are included in the repository root which are from the UNB StepUP-P150 dataset \[1].The step detection model was also trained using this dataset.
+Sample `.npz` files for several subjects are included in the repository root which are from the UNB StepUP-P150 dataset [1].The step detection model was also trained using this dataset.
 
 \---
 
@@ -140,7 +140,7 @@ The model runs at an input size of 736 px with a confidence threshold of 0.25.
 
 ## Configuration
 
-Pathology and project dropdown options are stored in `dropdown\_values.csv` and loaded at startup. New options can be added directly from the UI and are automatically appended to this file.
+Pathology and project dropdown options are stored in `dropdown_values.csv` and loaded at startup. New options can be added directly from the UI and are automatically appended to this file.
 
 ```csv
 Type,Value
@@ -173,7 +173,7 @@ Project,ACL Rehab Project
 
 ## References
 
-\[1] Larracy, Robyn et al. “A dataset of high-resolution plantar pressures for gait analysis across varying footwear and walking speeds.” Scientific data vol. 12,1 1415. 13 Aug. 2025, doi:10.1038/s41597-025-05792-1
+[1] Larracy, Robyn et al. “A dataset of high-resolution plantar pressures for gait analysis across varying footwear and walking speeds.” Scientific data vol. 12,1 1415. 13 Aug. 2025, doi:10.1038/s41597-025-05792-1
 
 
 
