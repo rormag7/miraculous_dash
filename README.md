@@ -54,7 +54,7 @@ Output directories are created automatically at runtime:
 
 ## Data Format
 
-Miraculous reads trial data from `.npz` files. Each file should contain a single array (accessed as `arr\_0`) with shape:
+Miraculous reads trial data from `.npz` files. Each file should contain a single array (accessed as `arr_0`) with shape:
 
 ```
 (num_frames, rows, cols)
@@ -86,16 +86,16 @@ pip install dash plotly numpy pandas matplotlib scipy scikit-learn \\
 
 ## Usage
 
-1. **Configure the trial file** — In `miraculous\_app.py`, set the `trial\_file` variable near the top of the script to point to your `.npz` file:
+1. **Configure the trial file** — In `miraculous_app.py`, set the `trial_file` variable near the top of the script to point to your `.npz` file:
 
 ```python
-   trial\_file = "S145\_W1.npz"
+   trial_file = "S145_W1.npz"
    ```
 
 2. **Run the application:**
 
 ```bash
-   python miraculous\_app.py
+   python miraculous_app.py
    ```
 
 3. **Open your browser** and navigate to `http://127.0.0.1:8050`
@@ -126,7 +126,7 @@ The application is organized into five tabs:
 
 ## Model Weights
 
-The step identification model (`model\_weights/yolov8l\_best.pt`) is a YOLOv8-Large network fine-tuned to detect plantar pressure footprints. It classifies each detected region as:
+The step identification model (`model_weights/yolov8l_best.pt`) is a YOLOv8-Large network fine-tuned to detect plantar pressure footprints. It classifies each detected region as:
 
 |Class ID|Label|
 |-|-|
