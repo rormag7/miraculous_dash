@@ -1447,7 +1447,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             plt.imshow(box['original_step_frames'][:].max(0), cmap = jet_cmap)     
             plt.plot(box['CoP_x'], box['CoP_y'])
             plt.title("Original Step")
-            plt.show()
+            #plt.show()
     
             box['rc_step_max'], box['rc_CoP_x'], box['rc_CoP_y'], box['trisect_1'], box['trisect_2'] = plot_pc1_aligned(box['original_step_frames'][:].max(0), box['CoP_x'], box['CoP_y'], rot_crop_threshold_kPa=0)
 
@@ -1457,21 +1457,21 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             plt.hlines(box['trisect_2'], 0, box['rc_step_max'].shape[1]-1)
             plt.plot(box['rc_CoP_x'], box['rc_CoP_y'])
             plt.title(f"Rotated and Cropped P{pass_id}_S{step_number}")
-            plt.show()
+            #plt.show()
             
             #Plotting the total pressure magnitude per step frames
             # Each sensor is .000025m^2 and the original pressure is in kPa, so multiplying out to get force in Newtons: F = P*A
             step_frame_force_magnitude = ((1000*.000025)*box['original_step_frames'][:]).sum(axis=(1, 2))
             plt.plot(range(len(step_frame_force_magnitude)), step_frame_force_magnitude)
             plt.title('Force Magnitude (N)')
-            plt.show()
+            #plt.show()
             
             # If left step
             if box['class'] == 1:
-                left_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'trisect_1':box['trisect_1'], 'trisect_2':box['trisect_2'], 'step_frame_force_magnitude':step_frame_force_magnitude}
+                left_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'trisect_1':box['trisect_1'], 'trisect_2':box['trisect_2'], 'step_frame_force_magnitude':step_frame_force_magnitude,'original_step_frames': box['original_step_frames']}
             # If right step
             elif box['class'] == 2:
-                right_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'trisect_1':box['trisect_1'], 'trisect_2':box['trisect_2'],'step_frame_force_magnitude':step_frame_force_magnitude}
+                right_steps[f'P{pass_id}_S{step_number}'] = {'rc_step_max':box['rc_step_max'], 'rc_CoP_x':box['rc_CoP_x'], 'rc_CoP_y':box['rc_CoP_y'], 'trisect_1':box['trisect_1'], 'trisect_2':box['trisect_2'],'step_frame_force_magnitude':step_frame_force_magnitude, 'original_step_frames': box['original_step_frames']}
             # If incomplete step, do nothing
             else:
                 pass 
@@ -1532,7 +1532,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         R_axes[len(R_step_keys)].set_xlabel("Width (px)")
         R_axes[len(R_step_keys)].set_ylabel("Length (px)")
         R_fig.tight_layout()
-        plt.show()
+        #plt.show()
         
         # Plotting the average magnitude of pressure throughout the duration of the step
         y_upper = out_R['avg_magnitude_curve'] + out_R['std_magnitude_curve']
@@ -1540,7 +1540,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         plt.plot(range(len(out_R['avg_magnitude_curve'])), out_R['avg_magnitude_curve'])
         plt.fill_between(range(len(out_R['avg_magnitude_curve'])), y_lower, y_upper, color='lightblue', alpha=0.5, label='Standard Deviation')
         plt.title("Average Force Magnitude (N)")
-        plt.show()
+        #plt.show()
         
     #"Foot Length (cm)": '245.3 \u00B1 4',
     # Getting data for average metrics table
@@ -1557,17 +1557,22 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
     std_step_length = []
     avg_step_width = [] # In cm, each tile is .5 x .5 cm
     std_step_width = []
+    avg_step_max_pressure = []
+    std_step_max_pressure = []
     
     
     for side_steps in [left_steps, right_steps]:
         step_durations = [] 
         step_max_force = []
+        step_max_pressure = []
         CoP_distances = []
         for step_key in side_steps:
             # Getting the number of frames in each step
             step_durations.append(len(side_steps[step_key]['step_frame_force_magnitude'])/100) # frame count / sample rate = time in seconds
-            # Getting the max pressure in each step
+            # Getting the max force in each step
             step_max_force.append(max(side_steps[step_key]['step_frame_force_magnitude']))
+            # Getting the max pressure in each step
+            step_max_pressure.append(np.max(side_steps[step_key]['original_step_frames']))
             # Getting the distance of the CoP trajectory
             x = side_steps[step_key]['rc_CoP_x']
             y = side_steps[step_key]['rc_CoP_y']
@@ -1579,6 +1584,9 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         
         avg_step_max_force.append(np.mean(np.array(step_max_force)))
         std_step_max_force.append(np.std(np.array(step_max_force)))
+        
+        avg_step_max_pressure.append(np.mean(np.array(step_max_pressure)))
+        std_step_max_pressure.append(np.std(np.array(step_max_pressure)))
         
         avg_CoP_distance.append(np.mean(np.array(CoP_distances)))
         std_CoP_distance.append(np.std(np.array(CoP_distances)))
@@ -1620,8 +1628,6 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             step_lengths.append(step_length)
 
             # Calculate width by only scanning above the first trisection and finding the longest continuous line
-
-            # Calculating the arch index
             
             
             
@@ -1629,7 +1635,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
             plt.title(f'Step ID: {step_key} | Contact Area: {contact_area} cm\u00b2\nLength : {step_length} cm | Width : {777} cm')
             plt.hlines(aligned_trisects[0], 0, aligned_mask.shape[1]-1 )
             plt.hlines(aligned_trisects[1], 0, aligned_mask.shape[1]-1 )
-            plt.show()
+            #plt.show()
         
         avg_contact_area.append(np.mean(np.array(contact_areas)))
         std_contact_area.append(np.std(np.array(contact_areas)))
@@ -1645,7 +1651,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         "Contact Area (cm\u00b2)": f'{avg_contact_area[0]:.1f} \u00B1 {std_contact_area[0]:.1f}',
         "Foot Length (cm)": f'{ avg_step_length[0]:.1f} \u00B1 {std_step_length[0]:.1f}',
         "Foot Width (cm)": 'WIP',
-        "Peak Pressure (kPa)": 'WIP',
+        "Peak Pressure (kPa)": f'{avg_step_max_pressure[0]:.0f} \u00B1 {std_step_max_pressure[0]:.0f}',
         "Average Pressure (kPa)": 'WIP',
         "Maximum Force (N)": f'{avg_step_max_force[0]:.0f}  \u00B1 {std_step_max_force[0]:.0f}',
         "CoP Distance (cm)": f'{avg_CoP_distance[0]:.1f} \u00B1 {std_CoP_distance[0]:.1f}',
@@ -1660,7 +1666,7 @@ def compute_average_metrics(compute_avg_clicks, bbox_info, shared_pass_data):
         "Contact Area (cm\u00b2)": f'{avg_contact_area[1]:.1f} \u00B1 {std_contact_area[1]:.1f}',
         "Foot Length (cm)": f'{ avg_step_length[1]:.1f} \u00B1 {std_step_length[1]:.1f}',
         "Foot Width (cm)": 'WIP',
-        "Peak Pressure (kPa)": 'WIP',
+        "Peak Pressure (kPa)":  f'{avg_step_max_pressure[1]:.0f} \u00B1 {std_step_max_pressure[1]:.0f}',
         "Average Pressure (kPa)": 'WIP',
         "Maximum Force (N)": f'{avg_step_max_force[1]:.0f}  \u00B1 {std_step_max_force[1]:.0f}',
         "CoP Distance (cm)": f'{avg_CoP_distance[1]:.1f} \u00B1 {std_CoP_distance[1]:.1f}',
@@ -2237,7 +2243,7 @@ def build_pdf_bytes(patient_info, fig_json, fig2_json, metrics_table):
         
 
     )
-    png_bytes = fig.to_image(format="png", scale=1, engine="kaleido")
+    png_bytes = fig.to_image(format="png", scale=1) # , engine="kaleido"
     
     
     # Match PDF font (Helvetica) and adjust sizes to harmonize
@@ -2271,7 +2277,7 @@ def build_pdf_bytes(patient_info, fig_json, fig2_json, metrics_table):
     # Header
     title = "Plantar Pressure Report"
     story.append(Paragraph(title, styles["Title"]))
-    story.append(Spacer(1, 0.25*inch))
+    #story.append(Spacer(1, 0.1*inch)) #.25
     
 
     available_width = doc.width  # from your SimpleDocTemplate/BaseDocTemplate
@@ -2291,10 +2297,10 @@ def build_pdf_bytes(patient_info, fig_json, fig2_json, metrics_table):
     for elem in img.contents:
         elem.scale(sx, sy)
     """
-    img.drawHeight = 5 * inch
-    img.drawWidth = 8 * inch
-    img2.drawHeight = 8/3 * inch
-    img2.drawWidth = 8 * inch
+    img.drawHeight = 4.5 * inch
+    img.drawWidth = 7.2 * inch
+    img2.drawHeight = 3.5 * inch #8/3
+    img2.drawWidth = 7 * inch
     story.append(img)
     story.append(img2)
     story.append(Spacer(1, 0.25*inch))
